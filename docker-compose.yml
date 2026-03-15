@@ -1,0 +1,75 @@
+services:
+  fabric:
+    image: itzg/minecraft-server:java21
+    container_name: fabric-minecraft-server
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    ports:
+      - "${MC_PORT:-25565}:25565"
+    expose:
+      - "${MC_MANAGEMENT_PORT:-25585}"
+    environment:
+      EULA: "TRUE"
+      TYPE: "FABRIC"
+      VERSION: "${MC_VERSION}"
+      TZ: "${TZ}"
+      UID: "${UID}"
+      GID: "${GID}"
+      MEMORY: "${MEMORY}"
+      INIT_MEMORY: "${INIT_MEMORY}"
+      ENABLE_ROLLING_LOGS: "true"
+      USE_AIKAR_FLAGS: "true"
+      SERVER_NAME: "${SERVER_NAME}"
+      MOTD: "${MOTD}"
+      MAX_PLAYERS: "${MAX_PLAYERS}"
+      DIFFICULTY: "${DIFFICULTY}"
+      MODE: "${MODE}"
+      PVP: "${PVP}"
+      ONLINE_MODE: "${ONLINE_MODE}"
+      ENABLE_WHITELIST: "${ENABLE_WHITELIST}"
+      OPS: "${OPS}"
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "mc-health"]
+      start_period: 2m
+      interval: 30s
+      timeout: 10s
+      retries: 6
+  panel:
+    build:
+      context: ./panel
+    container_name: fabric-minecraft-panel
+    restart: unless-stopped
+    user: "1000:1000"
+    group_add:
+      - "990"
+    depends_on:
+      - fabric
+    environment:
+      NODE_ENV: production
+      PORT: "${PANEL_PORT:-3000}"
+      MC_DATA_ROOT: /srv/minecraft/data
+      MC_BACKUPS_ROOT: /srv/minecraft/backups
+      PANEL_DATA_ROOT: /srv/minecraft/panel-data
+      MC_MANAGEMENT_HOST: fabric
+      MC_MANAGEMENT_PORT: "${MC_MANAGEMENT_PORT:-25585}"
+      MC_MANAGEMENT_TLS: "false"
+      MC_CONTAINER_NAME: fabric-minecraft-server
+    volumes:
+      - ./data:/srv/minecraft/data
+      - ./backups:/srv/minecraft/backups
+      - ./panel-data:/srv/minecraft/panel-data
+      - ./scripts:/srv/minecraft/scripts:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+  caddy:
+    image: caddy:2-alpine
+    container_name: fabric-minecraft-panel-caddy
+    restart: unless-stopped
+    depends_on:
+      - panel
+    ports:
+      - "${PANEL_HTTP_PORT:-8080}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "servercontrolbridge",
+  "version": "${version}",
+  "name": "Server Control Bridge",
+  "description": "Dedicated-server bridge mod for the Fabric server-control panel.",
+  "authors": [
+    "brayden"
+  ],
+  "contact": {},
+  "license": "All Rights Reserved",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "dev.brayden.fabric.servercontrolbridge.ServerControlBridgeMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.4",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
+

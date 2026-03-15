@@ -1,0 +1,10 @@
+.env
+backups/
+data/
+panel-data/
+
+panel/node_modules/
+panel/dist/
+
+panel-mod/.gradle/
+panel-mod/build/

@@ -1,0 +1,76 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+This live directory is the canonical home for the Fabric Minecraft server. Keep the root small and operational:
+
+- `docker-compose.yml`: Compose stack using `itzg/minecraft-server:java21`.
+- `.env`: active runtime configuration used by Docker Compose.
+- `.env.example`: reference copy of the intended defaults.
+- `README.md`: operator workflow and day-to-day commands.
+- `AGENTS.md`: contributor and maintenance guidance for this deployed stack.
+
+Runtime server data lives in `/opt/fabric-minecraft-server/data`. That includes worlds, logs, configs, whitelist data, and future mods.
+
+## Current Server State
+This server was built with the following fixed decisions:
+
+- Minecraft `1.21.11`, not `latest`.
+- Fabric-ready only; mods will be added later in `/opt/fabric-minecraft-server/data/mods`.
+- Live path: `/opt/fabric-minecraft-server`.
+- Memory target: `12G` max heap, `2G` initial heap.
+- Host game port: `6767/tcp`, forwarded to container `25565/tcp`.
+- Admin panel port: `8080/tcp` through Caddy.
+- Internal Minecraft management API: `25585/tcp` on the Compose network only.
+- Owner: `brayden:brayden` for the stack directory and data directory.
+- Container UID/GID mapping: `1000:1000`.
+- Current running services: `fabric`, `panel`, and `caddy`.
+- Panel access model: single-admin LAN page with no auth layer.
+
+The original source folder under `/home/brayden/fabric-minecraft-server` was cleaned up after deployment. Ongoing management should happen only from `/opt/fabric-minecraft-server`.
+
+## Build, Test, and Development Commands
+Run from `/opt/fabric-minecraft-server` unless noted:
+
+- `docker compose config`: validate the Compose stack and `.env`.
+- `docker compose up -d`: start or recreate the server.
+- `docker compose ps`: inspect container state.
+- `docker compose logs -f`: follow server logs.
+- `docker compose restart`: restart the service after config or mod changes.
+- `docker compose down`: stop the service.
+- `docker attach fabric-minecraft-server`: open the live server console.
+
+If Docker commands fail with a socket permission error, re-login so the `docker` group membership applies to `brayden`.
+
+## Coding Style & Naming Conventions
+Use ASCII by default. Keep YAML at 2-space indentation. Environment variables stay uppercase, for example `MC_VERSION`, `MEMORY`, and `ENABLE_WHITELIST`. If you add scripts later, use Bash with `set -euo pipefail` and lowercase hyphenated file names.
+
+## Testing Guidelines
+There is no formal test suite. Minimum validation:
+
+- run `bash -n` on every edited shell script;
+- run `docker compose config` after Compose or env changes;
+- run `docker compose up -d` after config changes that affect boot;
+- inspect `docker compose logs -f` for Fabric startup errors;
+- confirm files are still written under `data/` with `brayden` ownership.
+
+## Commit & Pull Request Guidelines
+Git history is now available in this environment, so use short imperative commits such as `Pin Minecraft to 1.21.11` or `Add whitelist defaults`. PRs should state operational impact, validation performed, and any required operator actions such as restarting the container or adding mods.
+
+Always update the git repo whenever a phase is completed or when a meaningful stack, panel, or mod change has been made. Do not leave completed work untracked.
+
+## Security & Configuration Tips
+Do not expose secrets or back up `data/` carelessly. Keep the Minecraft version pinned, review operator and whitelist settings before public use, and preserve `brayden` ownership on `/opt/fabric-minecraft-server` after restores or manual file copies.
+
+## Progress Notes
+
+- Phase 1 is complete: the host Minecraft port was changed to `6767`.
+- Phases 2-7 foundation are complete: the panel and Caddy stack are live, and the internal management API is enabled on `25585`.
+- Phase 8 is complete: dashboard and player-management APIs are live in the panel, backed by Docker state, file reads, and temporary RCON actions.
+- Phase 9 is complete: dashboard server controls are live for start, stop, restart, save, and broadcast, using the scoped wrapper and temporary RCON execution.
+- Phase 10 is complete: a console page and console APIs are live for recent logs and direct command execution through temporary RCON.
+- Phase 10 refinements are complete: console and dashboard logs now filter out management connection open/close noise, panel-issued console commands are echoed back into recent logs with their outputs, and the log views auto-refresh and pin to the newest entries.
+- Phase 11 is complete: the panel now uses the internal Minecraft JSON-RPC management API on `25585` for dashboard state, player management, world saves, and broadcasts, while the console page still uses the scoped RCON fallback for raw command execution.
+- Phase 12 is complete: the panel now has a real Settings page and structured settings APIs, using management RPC for live-safe changes and guarded `server.properties` edits for restart-required values.
+- Phase 12 UI refinements are complete: the settings page layout now keeps the sidebar usable, avoids input overlap, and uses a masonry-style group layout so cards flow naturally as they wrap.
+- The host-local Java 21 and Gradle toolchain remains installed under `/home/brayden/.local/opt`, and `panel-mod/` is still available as a validated Fabric mod workspace for future server-side extensions if the built-in management API proves insufficient.
+- The current server state is healthy: `fabric-minecraft-server` is running, healthy, and published on `6767`; `fabric-minecraft-panel` and `fabric-minecraft-panel-caddy` are up on the LAN.

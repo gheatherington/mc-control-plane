@@ -1,0 +1,320 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { config } from "./config";
+import { getContainerState, getRecentLogs } from "./control";
+import { callManagement } from "./management";
+
+type NamedEntry = {
+  created?: string;
+  expires?: string;
+  name: string;
+  source?: string;
+  uuid?: string;
+};
+
+type PlayerSummary = {
+  banned: boolean;
+  online: boolean;
+  op: boolean;
+  whitelist: boolean;
+  name: string;
+  uuid?: string;
+};
+
+type RemotePlayer = {
+  id?: string;
+  name: string;
+};
+
+type RemoteOperator = {
+  bypassesPlayerLimit?: boolean;
+  permissionLevel?: number;
+  player: RemotePlayer;
+};
+
+type RemoteUserBan = {
+  expires?: string;
+  player: RemotePlayer;
+  reason?: string;
+  source?: string;
+};
+
+type RemoteIpBan = {
+  expires?: string;
+  ip: string;
+  reason?: string;
+  source?: string;
+};
+
+const readJsonFile = async <T>(filename: string, fallback: T): Promise<T> => {
+  try {
+    const raw = await fs.readFile(path.join(config.dataRoot, filename), "utf8");
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const parseProperties = async () => {
+  const raw = await fs.readFile(path.join(config.dataRoot, "server.properties"), "utf8");
+  const values = raw.split("\n").reduce<Record<string, string>>((accumulator, line) => {
+    if (!line || line.startsWith("#") || !line.includes("=")) {
+      return accumulator;
+    }
+
+    const index = line.indexOf("=");
+    const key = line.slice(0, index);
+    const value = line.slice(index + 1);
+    accumulator[key] = value;
+    return accumulator;
+  }, {});
+
+  return values;
+};
+
+const mergePlayers = async (remote?: {
+  bannedPlayers: RemoteUserBan[];
+  onlinePlayers: RemotePlayer[];
+  ops: RemoteOperator[];
+  whitelist: RemotePlayer[];
+}): Promise<PlayerSummary[]> => {
+  const [knownPlayers, whitelist, ops, bannedPlayers] = await Promise.all([
+    readJsonFile<NamedEntry[]>("usercache.json", []),
+    readJsonFile<NamedEntry[]>("whitelist.json", []),
+    readJsonFile<NamedEntry[]>("ops.json", []),
+    readJsonFile<NamedEntry[]>("banned-players.json", [])
+  ]);
+
+  const players = new Map<string, PlayerSummary>();
+
+  const ensure = (name: string, uuid?: string) => {
+    const existing = players.get(name) || {
+      banned: false,
+      online: false,
+      op: false,
+      whitelist: false,
+      name,
+      uuid
+    };
+
+    if (uuid && !existing.uuid) {
+      existing.uuid = uuid;
+    }
+
+    players.set(name, existing);
+    return existing;
+  };
+
+  for (const player of knownPlayers) {
+    ensure(player.name, player.uuid);
+  }
+
+  for (const player of whitelist) {
+    ensure(player.name, player.uuid).whitelist = true;
+  }
+
+  for (const player of ops) {
+    ensure(player.name, player.uuid).op = true;
+  }
+
+  for (const player of bannedPlayers) {
+    ensure(player.name, player.uuid).banned = true;
+  }
+
+  for (const player of remote?.whitelist || []) {
+    ensure(player.name, player.id).whitelist = true;
+  }
+
+  for (const operator of remote?.ops || []) {
+    ensure(operator.player.name, operator.player.id).op = true;
+  }
+
+  for (const player of remote?.bannedPlayers || []) {
+    ensure(player.player.name, player.player.id).banned = true;
+  }
+
+  for (const player of remote?.onlinePlayers || []) {
+    ensure(player.name, player.id).online = true;
+  }
+
+  return Array.from(players.values()).sort((left, right) => left.name.localeCompare(right.name));
+};
+
+const readSettingsFromManagement = async () => {
+  const [status, difficulty, maxPlayers, motd, whitelistEnabled] = await Promise.all([
+    callManagement<{ players?: RemotePlayer[]; started: boolean; version?: { name?: string } }>("minecraft:server/status"),
+    callManagement<string>("minecraft:serversettings/difficulty"),
+    callManagement<number>("minecraft:serversettings/max_players"),
+    callManagement<string>("minecraft:serversettings/motd"),
+    callManagement<boolean>("minecraft:serversettings/use_allowlist")
+  ]);
+
+  return {
+    difficulty,
+    maxPlayers,
+    motd,
+    onlinePlayers: status.players || [],
+    version: status.version?.name,
+    whitelistEnabled
+  };
+};
+
+const readPlayerName = (entry: NamedEntry | RemotePlayer) => entry.name;
+
+const readOperatorName = (entry: NamedEntry | RemoteOperator) =>
+  "player" in entry ? entry.player.name : entry.name;
+
+export const getDashboard = async () => {
+  const [state, properties, logs] = await Promise.all([
+    getContainerState(),
+    parseProperties(),
+    getRecentLogs(20)
+  ]);
+
+  let settings: Awaited<ReturnType<typeof readSettingsFromManagement>> | null = null;
+
+  if (state.Running) {
+    try {
+      settings = await readSettingsFromManagement();
+    } catch {
+      settings = null;
+    }
+  }
+
+  const players = await mergePlayers(settings ? {
+    bannedPlayers: [],
+    onlinePlayers: settings.onlinePlayers,
+    ops: [],
+    whitelist: []
+  } : undefined);
+
+  return {
+    logs: logs.split("\n").filter(Boolean),
+    players: {
+      known: players.length,
+      online: players.filter((player) => player.online).length
+    },
+    server: {
+      difficulty: settings?.difficulty || properties.difficulty,
+      managementPort: properties["management-server-port"],
+      maxPlayers: settings?.maxPlayers || Number(properties["max-players"] || 0),
+      motd: settings?.motd || properties.motd,
+      onlineMode: properties["online-mode"] === "true",
+      port: 6767,
+      status: state.Status,
+      healthy: state.Health?.Status || "unknown",
+      version: settings?.version || "1.21.11",
+      whitelistEnabled: settings?.whitelistEnabled ?? (properties["white-list"] === "true")
+    }
+  };
+};
+
+export const listPlayers = async () => {
+  const state = await getContainerState();
+  let remote: {
+    bannedIps: RemoteIpBan[];
+    bannedPlayers: RemoteUserBan[];
+    onlinePlayers: RemotePlayer[];
+    ops: RemoteOperator[];
+    whitelist: RemotePlayer[];
+  } | null = null;
+
+  if (state.Running) {
+    try {
+      const [onlinePlayers, bannedIps, whitelist, ops, bannedPlayers] = await Promise.all([
+        callManagement<RemotePlayer[]>("minecraft:players"),
+        callManagement<RemoteIpBan[]>("minecraft:ip_bans"),
+        callManagement<RemotePlayer[]>("minecraft:allowlist"),
+        callManagement<RemoteOperator[]>("minecraft:operators"),
+        callManagement<RemoteUserBan[]>("minecraft:bans")
+      ]);
+
+      remote = {
+        bannedIps,
+        bannedPlayers,
+        onlinePlayers,
+        ops,
+        whitelist
+      };
+    } catch {
+      remote = null;
+    }
+  }
+
+  const [players, bannedIps, whitelist, ops] = await Promise.all([
+    mergePlayers(remote ? {
+      bannedPlayers: remote.bannedPlayers,
+      onlinePlayers: remote.onlinePlayers,
+      ops: remote.ops,
+      whitelist: remote.whitelist
+    } : undefined),
+    remote ? Promise.resolve(remote.bannedIps) : readJsonFile<NamedEntry[]>("banned-ips.json", []),
+    remote ? Promise.resolve(remote.whitelist) : readJsonFile<NamedEntry[]>("whitelist.json", []),
+    remote ? Promise.resolve(remote.ops) : readJsonFile<NamedEntry[]>("ops.json", [])
+  ]);
+
+  return {
+    bannedIps,
+    ops: ops.map(readOperatorName),
+    players,
+    whitelist: whitelist.map(readPlayerName)
+  };
+};
+
+export const whitelistPlayer = async (name: string) => {
+  await callManagement("minecraft:allowlist/add", [[{ name }]]);
+  return listPlayers();
+};
+
+export const unwhitelistPlayer = async (name: string) => {
+  await callManagement("minecraft:allowlist/remove", [[{ name }]]);
+  return listPlayers();
+};
+
+export const opPlayer = async (name: string) => {
+  await callManagement("minecraft:operators/add", [[{
+    bypassesPlayerLimit: false,
+    permissionLevel: 4,
+    player: { name }
+  }]]);
+  return listPlayers();
+};
+
+export const deopPlayer = async (name: string) => {
+  await callManagement("minecraft:operators/remove", [[{ name }]]);
+  return listPlayers();
+};
+
+export const banPlayer = async (name: string) => {
+  await callManagement("minecraft:bans/add", [[{
+    player: { name }
+  }]]);
+  return listPlayers();
+};
+
+export const pardonPlayer = async (name: string) => {
+  await callManagement("minecraft:bans/remove", [[{ name }]]);
+  return listPlayers();
+};
+
+export const kickPlayer = async (name: string, reason?: string) => {
+  await callManagement("minecraft:players/kick", [[{
+    message: reason && reason.trim() ? { literal: reason.trim() } : undefined,
+    player: { name }
+  }]]);
+  return listPlayers();
+};
+
+export const saveWorld = async () => {
+  await callManagement("minecraft:server/save", [false]);
+  return "Save requested through the management API";
+};
+
+export const broadcastMessage = async (message: string) => {
+  await callManagement("minecraft:server/system_message", [{
+    message: { literal: message },
+    overlay: false
+  }]);
+
+  return "Broadcast sent through the management API";
+};

@@ -1,0 +1,31 @@
+{
+  "name": "fabric-minecraft-panel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "node ./esbuild.client.mjs && mkdir -p dist/public && cp public/index.html dist/public/index.html",
+    "build:server": "tsc -p tsconfig.server.json",
+    "check": "tsc -p tsconfig.server.json --noEmit",
+    "dev": "tsx src/server/index.ts",
+    "start": "node dist/server/index.js"
+  },
+  "dependencies": {
+    "@types/ws": "^8.18.1",
+    "express": "^4.21.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.1",
+    "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.13.14",
+    "@types/react": "^18.3.20",
+    "@types/react-dom": "^18.3.6",
+    "esbuild": "^0.25.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
