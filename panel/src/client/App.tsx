@@ -654,7 +654,7 @@ const BackupsPage = () => {
   const [selectedBackup, setSelectedBackup] = useState<BackupDetails | null>(null);
   const [backupName, setBackupName] = useState("");
   const [restoreConfirmation, setRestoreConfirmation] = useState("");
-  const [selectedExclusions, setSelectedExclusions] = useState<string[]>(["logs", "crash-reports"]);
+  const [selectedIncludes, setSelectedIncludes] = useState<string[]>(["world"]);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -684,8 +684,8 @@ const BackupsPage = () => {
     void loadBackups();
   }, []);
 
-  const toggleExclusion = (key: string) => {
-    setSelectedExclusions((current) => current.includes(key)
+  const toggleInclude = (key: string) => {
+    setSelectedIncludes((current) => current.includes(key)
       ? current.filter((value) => value !== key)
       : [...current, key]);
   };
@@ -697,7 +697,9 @@ const BackupsPage = () => {
 
     const response = await fetch("/api/backups", {
       body: JSON.stringify({
-        exclusions: selectedExclusions,
+        exclusions: backupsState.exclusions
+          .map((option) => option.key)
+          .filter((key) => !selectedIncludes.includes(key)),
         name: backupName
       }),
       headers: {
@@ -787,7 +789,7 @@ const BackupsPage = () => {
       <article className="panel-card logs-card settings-summary-card">
         <p className="eyebrow">Backup Control</p>
         <h1>Scoped Data Archives</h1>
-        <p className="body-copy">Archives are created only from the mounted Minecraft data directory and stored under the configured backups root. World save data can be included or excluded from the archive as part of the backup options below.</p>
+        <p className="body-copy">Archives are created only from the mounted Minecraft data directory and stored under the configured backups root. The options below control which data classes are included in the archive, with world data enabled by default.</p>
         <div className="metric-grid">
           <div><span className="metric-label">Archives</span><strong>{backupsState.backups.length}</strong></div>
           <div><span className="metric-label">Latest Backup</span><strong>{backupsState.backups[0] ? new Date(backupsState.backups[0].modifiedAt).toLocaleString() : "None"}</strong></div>
@@ -800,7 +802,7 @@ const BackupsPage = () => {
       <article className="panel-card">
         <p className="eyebrow">Create Backup</p>
         <h1>New Archive</h1>
-        <p className="body-copy">Optional labels are sanitized into the archive name. Checked options are excluded from the new archive, including world data if you want a config-only backup.</p>
+        <p className="body-copy">Optional labels are sanitized into the archive name. Checked options are included in the new archive. `World Data` starts enabled so world saves are backed up by default.</p>
         <div className="player-form">
           <input onChange={(event) => setBackupName(event.target.value)} placeholder="Optional label, for example pre-update" value={backupName} />
         </div>
@@ -808,8 +810,8 @@ const BackupsPage = () => {
           {backupsState.exclusions.map((option) => (
             <label className="backup-option" key={option.key}>
               <input
-                checked={selectedExclusions.includes(option.key)}
-                onChange={() => toggleExclusion(option.key)}
+                checked={selectedIncludes.includes(option.key)}
+                onChange={() => toggleInclude(option.key)}
                 type="checkbox"
               />
               <div>
