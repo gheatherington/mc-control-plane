@@ -253,6 +253,25 @@ Scope:
 - Add quarantine or rollback handling for bad uploads.
 - Audit all mod changes.
 
+Implementation steps:
+
+- Add a backend mod service that scopes all filesystem actions to `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine` with path normalization and traversal protection.
+- Build mod inventory endpoints first so the panel can distinguish active mods, staged uploads, and quarantined files before any write flows are added.
+- Extract practical jar metadata for listing views, such as file size, modified time, and Fabric metadata from `fabric.mod.json` when present.
+- Add upload flows into staging before active install so new jars can be reviewed, promoted, or deleted without immediately affecting the live server.
+- Add promote/install and remove actions with explicit restart-required messaging and a clear distinction between files that are live on disk versus loaded in the running server.
+- Add quarantine and rollback handling so bad uploads or rejected installs can be moved out of active paths instead of being hard-deleted first.
+- Replace the placeholder Mods page with an inventory view, upload form, staged-versus-active sections, quarantine visibility, and restart guidance.
+- Audit all mod uploads, promotions, removals, and quarantine actions, then finish with manual smoke tests that cover upload, stage, install, remove, and rollback paths.
+
+Progress update:
+
+- Started the first Phase 15 slice by adding a backend mod inventory service scoped to `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine`.
+- Added `/api/mods` so the panel can read active, staged, and quarantined jar inventories before any write flows are enabled.
+- Added jar metadata extraction for inventory views, including file size, modified time, and `fabric.mod.json` fields when present.
+- Replaced the placeholder `Mods` route with a live read-only inventory page that shows the three scopes and restart-required guidance.
+- Upload, promote/install, remove, quarantine, rollback, and explicit mod audit events remain for the next Phase 15 slice.
+
 Validation:
 
 - `npm run check` in `panel/`

@@ -381,6 +381,42 @@ a {
   margin-top: 1.5rem;
 }
 
+.mod-table {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.mod-row {
+  align-items: start;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 209, 186, 0.12);
+  border-radius: 1rem;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 1rem;
+}
+
+.mod-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.mod-file-name {
+  margin-bottom: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.mod-meta {
+  color: rgba(244, 239, 230, 0.78);
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.92rem;
+}
+
 .setting-input {
   appearance: none;
   background: rgba(255, 255, 255, 0.08);

@@ -5,6 +5,7 @@ import { createBackup, deleteBackup, getBackupExclusionOptions, inspectBackup, l
 import { appendConsoleEcho, getRecentLogs, restartServer, runRconCommand, startServer, stopServer } from "./control";
 import { getDashboard, banPlayer, broadcastMessage, deopPlayer, kickPlayer, listPlayers, opPlayer, pardonPlayer, saveWorld, unwhitelistPlayer, whitelistPlayer } from "./minecraft";
 import { config } from "./config";
+import { listModsInventory } from "./mods";
 import { getSettings, refreshRestartBaseline, updateSettings } from "./settings";
 import { writeAuditEvent } from "./audit";
 
@@ -125,6 +126,10 @@ export const createApp = () => {
       backups: await listBackups(),
       exclusions: getBackupExclusionOptions()
     });
+  });
+
+  app.get("/api/mods", async (_req: Request, res: Response) => {
+    res.json(await listModsInventory());
   });
 
   app.get("/api/backups/:name", async (req: Request, res: Response) => {

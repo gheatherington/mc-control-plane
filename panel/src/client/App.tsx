@@ -118,6 +118,36 @@ type BackupsResponse = {
   exclusions: BackupExclusionOption[];
 };
 
+type ModMetadata = {
+  description?: string;
+  environment?: string;
+  id: string;
+  name?: string;
+  version?: string;
+};
+
+type ModRecord = {
+  fabricMetadata: ModMetadata | null;
+  fileName: string;
+  modifiedAt: string;
+  scope: "active" | "staging" | "quarantine";
+  sizeBytes: number;
+};
+
+type ModsResponse = {
+  mods: {
+    active: ModRecord[];
+    quarantine: ModRecord[];
+    staging: ModRecord[];
+  };
+  restartRequired: boolean;
+  roots: {
+    active: string;
+    quarantine: string;
+    staging: string;
+  };
+};
+
 const flattenSettings = (groups: SettingsGroup[]) => groups.flatMap((group) => group.settings);
 
 const toDraftValue = (value: SettingValue) => typeof value === "boolean" ? String(value) : String(value);
@@ -133,6 +163,12 @@ const formatBytes = (value: number) => {
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
+const modScopeLabel: Record<ModRecord["scope"], string> = {
+  active: "Active Mods",
+  quarantine: "Quarantined Mods",
+  staging: "Staged Mods"
 };
 
 const Page = ({ title, description }: { title: string; description: string }) => (
@@ -892,12 +928,97 @@ const BackupsPage = () => {
   );
 };
 
+const ModList = ({ mods }: { mods: ModRecord[] }) => {
+  if (mods.length === 0) {
+    return <p className="body-copy">No jar files are present in this scope yet.</p>;
+  }
+
+  return (
+    <div className="mod-table">
+      {mods.map((mod) => (
+        <div className="mod-row" key={`${mod.scope}-${mod.fileName}`}>
+          <div>
+            <div className="mod-heading">
+              <strong>{mod.fabricMetadata?.name || mod.fileName}</strong>
+              <span className={`tag ${mod.fabricMetadata ? "live-tag" : "restart-tag"}`}>
+                {mod.fabricMetadata ? "Fabric Metadata" : "No fabric.mod.json"}
+              </span>
+            </div>
+            <p className="body-copy mod-file-name">{mod.fileName}</p>
+            <div className="player-tags">
+              {mod.fabricMetadata?.id ? <span className="tag">{mod.fabricMetadata.id}</span> : null}
+              {mod.fabricMetadata?.version ? <span className="tag">{mod.fabricMetadata.version}</span> : null}
+              {mod.fabricMetadata?.environment ? <span className="tag">{mod.fabricMetadata.environment}</span> : null}
+            </div>
+            {mod.fabricMetadata?.description ? <p className="body-copy">{mod.fabricMetadata.description}</p> : null}
+          </div>
+          <div className="mod-meta">
+            <span><strong>Modified</strong> {new Date(mod.modifiedAt).toLocaleString()}</span>
+            <span><strong>Size</strong> {formatBytes(mod.sizeBytes)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const ModsPage = () => {
+  const [modsState, setModsState] = useState<ModsResponse | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const loadMods = async () => {
+    setPending(true);
+    const response = await fetch("/api/mods");
+    const data = await response.json() as ModsResponse;
+    setModsState(data);
+    setPending(false);
+  };
+
+  useEffect(() => {
+    void loadMods();
+  }, []);
+
+  if (!modsState) {
+    return <Page description="Loading active, staged, and quarantined mod jars from the scoped server directories..." title="Mods" />;
+  }
+
+  const totalMods = modsState.mods.active.length + modsState.mods.staging.length + modsState.mods.quarantine.length;
+
+  return (
+    <section className="dashboard-grid settings-page">
+      <article className="panel-card logs-card settings-summary-card">
+        <p className="eyebrow">Mod Inventory</p>
+        <h1>Scoped Fabric Jars</h1>
+        <p className="body-copy">Phase 15 now inventories the live mods directory, a staging area, and panel quarantine. This is read-only for now so active and staged state can be reviewed safely before upload, install, and rollback flows are added.</p>
+        <div className="metric-grid">
+          <div><span className="metric-label">Active</span><strong>{modsState.mods.active.length}</strong></div>
+          <div><span className="metric-label">Staged</span><strong>{modsState.mods.staging.length}</strong></div>
+          <div><span className="metric-label">Quarantined</span><strong>{modsState.mods.quarantine.length}</strong></div>
+          <div><span className="metric-label">Total Jars</span><strong>{totalMods}</strong></div>
+        </div>
+        <p className="notice-text">Any mod add, remove, or move between these scopes will require a server restart before Minecraft loads the changed jar set.</p>
+        <div className="action-grid">
+          <button className={pending ? "primary-button is-loading" : "primary-button"} disabled={pending} onClick={() => void loadMods()} type="button">Refresh Inventory</button>
+        </div>
+      </article>
+      {(["active", "staging", "quarantine"] as const).map((scope) => (
+        <article className="panel-card" key={scope}>
+          <p className="eyebrow">{modScopeLabel[scope]}</p>
+          <h1>{modsState.mods[scope].length}</h1>
+          <p className="body-copy">Path: <code>{modsState.roots[scope]}</code></p>
+          <ModList mods={modsState.mods[scope]} />
+        </article>
+      ))}
+    </section>
+  );
+};
+
 const pages = [
   { path: "/", label: "Dashboard", element: <DashboardPage /> },
   { path: "/console", label: "Console", element: <ConsolePage /> },
   { path: "/players", label: "Players", element: <PlayersPage /> },
   { path: "/files", label: "Files", element: <Page title="Files" description="Scoped file management will operate only inside the mounted Minecraft data directory." /> },
-  { path: "/mods", label: "Mods", element: <Page title="Mods" description="Mod upload, staging, restart-required workflow, and quarantine rollback will live here." /> },
+  { path: "/mods", label: "Mods", element: <ModsPage /> },
   { path: "/backups", label: "Backups", element: <BackupsPage /> },
   { path: "/settings", label: "Settings", element: <SettingsPage /> },
   { path: "/audit", label: "Audit", element: <AuditPage /> }
