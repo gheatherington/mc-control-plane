@@ -787,7 +787,7 @@ const BackupsPage = () => {
       <article className="panel-card logs-card settings-summary-card">
         <p className="eyebrow">Backup Control</p>
         <h1>Scoped Data Archives</h1>
-        <p className="body-copy">Archives are created only from the mounted Minecraft data directory, including world save data such as `world/`, and stored under the configured backups root. Restore replaces the live data directory and requires an exact confirmation phrase.</p>
+        <p className="body-copy">Archives are created only from the mounted Minecraft data directory and stored under the configured backups root. World save data can be included or excluded from the archive as part of the backup options below.</p>
         <div className="metric-grid">
           <div><span className="metric-label">Archives</span><strong>{backupsState.backups.length}</strong></div>
           <div><span className="metric-label">Latest Backup</span><strong>{backupsState.backups[0] ? new Date(backupsState.backups[0].modifiedAt).toLocaleString() : "None"}</strong></div>
@@ -800,7 +800,7 @@ const BackupsPage = () => {
       <article className="panel-card">
         <p className="eyebrow">Create Backup</p>
         <h1>New Archive</h1>
-        <p className="body-copy">Optional labels are sanitized into the archive name. Exclusions only apply to new archives and skip noisy or reproducible paths. World save directories are always included.</p>
+        <p className="body-copy">Optional labels are sanitized into the archive name. Checked options are excluded from the new archive, including world data if you want a config-only backup.</p>
         <div className="player-form">
           <input onChange={(event) => setBackupName(event.target.value)} placeholder="Optional label, for example pre-update" value={backupName} />
         </div>

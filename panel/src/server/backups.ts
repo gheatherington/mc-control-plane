@@ -12,6 +12,11 @@ const dataParentRoot = path.dirname(config.dataRoot);
 
 const backupExclusionOptions = [
   {
+    description: "World save data, including region files, player data, and dimension data.",
+    key: "world",
+    label: "World Data"
+  },
+  {
     description: "Server logs are noisy and can be regenerated outside the archive.",
     key: "logs",
     label: "Logs"
@@ -199,7 +204,12 @@ export const createBackup = async (options: { exclusions?: unknown; name?: strin
   const label = sanitizeBackupLabel(options.name);
   const fileName = `${formatBackupStamp(new Date())}-${label || rootName}.tar.gz`;
   const archivePath = path.join(config.backupsRoot, fileName);
-  const excludeArgs = exclusions.map((exclusion) => `--exclude=${path.posix.join(rootName, exclusion)}`);
+  const excludeTargets = exclusions.flatMap((exclusion) => (
+    exclusion === "world"
+      ? knownWorldRoots.map((root) => path.posix.join(rootName, root))
+      : [path.posix.join(rootName, exclusion)]
+  ));
+  const excludeArgs = excludeTargets.map((target) => `--exclude=${target}`);
 
   await execFileAsync(tarCommand, ["-czf", archivePath, ...excludeArgs, rootName], {
     cwd: dataParentRoot,
