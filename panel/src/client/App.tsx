@@ -714,6 +714,7 @@ const BackupsPage = () => {
   const [backupsState, setBackupsState] = useState<BackupsResponse | null>(null);
   const [selectedBackup, setSelectedBackup] = useState<BackupDetails | null>(null);
   const [backupName, setBackupName] = useState("");
+  const [inspectTarget, setInspectTarget] = useState<string | null>(null);
   const [restoreConfirmation, setRestoreConfirmation] = useState("");
   const [selectedIncludes, setSelectedIncludes] = useState<string[]>(["world"]);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -721,6 +722,7 @@ const BackupsPage = () => {
   const [message, setMessage] = useState("");
 
   const loadBackups = async (preferredBackupName?: string) => {
+    setInspectTarget(preferredBackupName || null);
     const response = await fetch("/api/backups");
     const data = await response.json() as BackupsResponse;
     setBackupsState(data);
@@ -728,17 +730,20 @@ const BackupsPage = () => {
     const nextBackupName = preferredBackupName || selectedBackup?.name || data.backups[0]?.name;
     if (!nextBackupName) {
       setSelectedBackup(null);
+      setInspectTarget(null);
       return;
     }
 
     const detailResponse = await fetch(`/api/backups/${encodeURIComponent(nextBackupName)}`);
     if (!detailResponse.ok) {
       setSelectedBackup(null);
+      setInspectTarget(null);
       return;
     }
 
     const detail = await detailResponse.json() as BackupDetails;
     setSelectedBackup(detail);
+    setInspectTarget(null);
   };
 
   useEffect(() => {
@@ -854,7 +859,7 @@ const BackupsPage = () => {
         <div className="metric-grid">
           <div><span className="metric-label">Archives</span><strong>{backupsState.backups.length}</strong></div>
           <div><span className="metric-label">Latest Backup</span><strong>{backupsState.backups[0] ? new Date(backupsState.backups[0].modifiedAt).toLocaleString() : "None"}</strong></div>
-          <div><span className="metric-label">Selected</span><strong>{selectedBackup?.name || "None"}</strong></div>
+          <div><span className="metric-label">Selected</span><strong>{inspectTarget || selectedBackup?.name || "None"}</strong></div>
         </div>
         <p className="notice-text">Restore stops the server, replaces the mounted data directory, and starts the server again if it had been running before the restore.</p>
         {message ? <p className="success-text">{message}</p> : null}
@@ -905,7 +910,14 @@ const BackupsPage = () => {
               <span>{formatBytes(backup.sizeBytes)}</span>
               <span>{backup.format}</span>
               <span className="backup-row-actions">
-                <button className="secondary-button" disabled={!!pendingAction} onClick={() => void loadBackups(backup.name)} type="button">Inspect</button>
+                <button
+                  className={inspectTarget === backup.name ? "secondary-button is-loading" : "secondary-button"}
+                  disabled={!!pendingAction || inspectTarget !== null}
+                  onClick={() => void loadBackups(backup.name)}
+                  type="button"
+                >
+                  {inspectTarget === backup.name ? "Inspecting..." : "Inspect"}
+                </button>
                 <button className="secondary-button" disabled={!!pendingAction} onClick={() => void removeArchive(backup.name)} type="button">Delete</button>
               </span>
             </div>
@@ -915,8 +927,10 @@ const BackupsPage = () => {
       </article>
       <article className="panel-card">
         <p className="eyebrow">Restore Flow</p>
-        <h1>{selectedBackup?.name || "Select A Backup"}</h1>
-        {selectedBackup ? (
+        <h1>{inspectTarget || selectedBackup?.name || "Select A Backup"}</h1>
+        {inspectTarget ? (
+          <p className="body-copy">Loading archive details for {inspectTarget}...</p>
+        ) : selectedBackup ? (
           <>
             <div className="metric-grid">
               <div><span className="metric-label">Entries</span><strong>{selectedBackup.entryCount}</strong></div>
