@@ -263,6 +263,55 @@ a {
   padding: 0.85rem 1rem;
 }
 
+.audit-filters {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  margin-bottom: 1rem;
+}
+
+.audit-filters input,
+.audit-filters select {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 209, 186, 0.16);
+  border-radius: 0.85rem;
+  color: #fff7f0;
+  font: inherit;
+  padding: 0.85rem 1rem;
+}
+
+.audit-table {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1.5rem 0;
+}
+
+.audit-table-header,
+.audit-row {
+  align-items: center;
+  column-gap: 1rem;
+  display: grid;
+  grid-template-columns: minmax(12rem, 1.4fr) 5rem minmax(14rem, 2fr) 5rem minmax(10rem, 1.2fr) minmax(8rem, 1fr);
+}
+
+.audit-table-header {
+  color: rgba(244, 239, 230, 0.62);
+  font-size: 0.78rem;
+  padding: 0 0.5rem;
+  text-transform: uppercase;
+}
+
+.audit-row {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 209, 186, 0.12);
+  border-radius: 1rem;
+  padding: 0.9rem 1rem;
+}
+
+.audit-path {
+  overflow-wrap: anywhere;
+}
+
 .setting-input {
   appearance: none;
   background: rgba(255, 255, 255, 0.08);
@@ -411,5 +460,14 @@ h1 {
 
   .settings-masonry {
     column-count: 1;
+  }
+
+  .audit-table-header {
+    display: none;
+  }
+
+  .audit-row {
+    grid-template-columns: 1fr;
+    row-gap: 0.45rem;
   }
 }

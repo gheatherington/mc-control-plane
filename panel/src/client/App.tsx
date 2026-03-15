@@ -67,9 +67,39 @@ type SettingsResponse = {
   serverRunning: boolean;
 };
 
+type AuditEntry = {
+  action: string;
+  actor: string;
+  ip: string;
+  method: string;
+  path: string;
+  status: number;
+  timestamp: string;
+};
+
+type AuditResponse = {
+  entries: AuditEntry[];
+  page: number;
+  pageSize: number;
+  summary: {
+    actions: Record<string, number>;
+    methods: Record<string, number>;
+    statuses: Record<string, number>;
+    totalEntries: number;
+    filteredEntries: number;
+  };
+  totalPages: number;
+};
+
 const flattenSettings = (groups: SettingsGroup[]) => groups.flatMap((group) => group.settings);
 
 const toDraftValue = (value: SettingValue) => typeof value === "boolean" ? String(value) : String(value);
+
+const formatCountMap = (counts: Record<string, number>) => Object.entries(counts)
+  .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+  .slice(0, 4)
+  .map(([key, count]) => `${key}: ${count}`)
+  .join(" | ");
 
 const Page = ({ title, description }: { title: string; description: string }) => (
   <section className="panel-card">
@@ -467,6 +497,124 @@ const SettingsPage = () => {
   );
 };
 
+const AuditPage = () => {
+  const [auditState, setAuditState] = useState<AuditResponse | null>(null);
+  const [filters, setFilters] = useState({
+    action: "",
+    method: "",
+    search: "",
+    status: ""
+  });
+  const [pending, setPending] = useState(false);
+
+  const loadAudit = async (page = 1, nextFilters = filters) => {
+    setPending(true);
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: "40"
+    });
+
+    if (nextFilters.search) params.set("search", nextFilters.search);
+    if (nextFilters.method) params.set("method", nextFilters.method);
+    if (nextFilters.action) params.set("action", nextFilters.action);
+    if (nextFilters.status) params.set("status", nextFilters.status);
+
+    const response = await fetch(`/api/audit?${params.toString()}`);
+    const data = await response.json() as AuditResponse;
+    setAuditState(data);
+    setPending(false);
+  };
+
+  useEffect(() => {
+    void loadAudit();
+  }, []);
+
+  if (!auditState) {
+    return <Page description="Loading recent audit history from panel-data/audit/audit.log..." title="Audit" />;
+  }
+
+  return (
+    <section className="dashboard-grid">
+      <article className="panel-card logs-card settings-summary-card">
+        <p className="eyebrow">Operational History</p>
+        <h1>Audit Trail</h1>
+        <p className="body-copy">Search recent API activity by method, status, action, IP, path, or actor. The backend trims the on-disk audit log if it grows past the configured size guardrail.</p>
+        <div className="metric-grid">
+          <div><span className="metric-label">Visible Entries</span><strong>{auditState.summary.filteredEntries}</strong></div>
+          <div><span className="metric-label">Log Entries</span><strong>{auditState.summary.totalEntries}</strong></div>
+          <div><span className="metric-label">Page</span><strong>{auditState.page}/{auditState.totalPages}</strong></div>
+        </div>
+        <p className="body-copy">Methods: {formatCountMap(auditState.summary.methods) || "No entries"}</p>
+        <p className="body-copy">Statuses: {formatCountMap(auditState.summary.statuses) || "No entries"}</p>
+        <p className="body-copy">Actions: {formatCountMap(auditState.summary.actions) || "No entries"}</p>
+      </article>
+      <article className="panel-card logs-card">
+        <p className="eyebrow">Filters</p>
+        <h1>Search Audit</h1>
+        <div className="audit-filters">
+          <input
+            onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+            placeholder="Search path, IP, actor, action, or status"
+            value={filters.search}
+          />
+          <select onChange={(event) => setFilters((current) => ({ ...current, method: event.target.value }))} value={filters.method}>
+            <option value="">All methods</option>
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+            <option value="DELETE">DELETE</option>
+          </select>
+          <input
+            onChange={(event) => setFilters((current) => ({ ...current, action: event.target.value }))}
+            placeholder="Action filter, for example api-request"
+            value={filters.action}
+          />
+          <select onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))} value={filters.status}>
+            <option value="">All statuses</option>
+            <option value="200">200</option>
+            <option value="304">304</option>
+            <option value="400">400</option>
+            <option value="500">500</option>
+          </select>
+        </div>
+        <div className="action-grid">
+          <button className={pending ? "primary-button is-loading" : "primary-button"} disabled={pending} onClick={() => void loadAudit(1, filters)} type="button">Apply Filters</button>
+          <button className="secondary-button" disabled={pending} onClick={() => {
+            const nextFilters = { action: "", method: "", search: "", status: "" };
+            setFilters(nextFilters);
+            void loadAudit(1, nextFilters);
+          }} type="button">Reset</button>
+        </div>
+        <div className="audit-table">
+          <div className="audit-table-header">
+            <span>Timestamp</span>
+            <span>Method</span>
+            <span>Path</span>
+            <span>Status</span>
+            <span>IP</span>
+            <span>Action</span>
+          </div>
+          {auditState.entries.map((entry) => (
+            <div className="audit-row" key={`${entry.timestamp}-${entry.method}-${entry.path}-${entry.status}`}>
+              <span>{new Date(entry.timestamp).toLocaleString()}</span>
+              <span>{entry.method}</span>
+              <span className="audit-path">{entry.path}</span>
+              <span>{entry.status}</span>
+              <span>{entry.ip}</span>
+              <span>{entry.action}</span>
+            </div>
+          ))}
+          {auditState.entries.length === 0 ? <p className="body-copy">No audit entries matched the current filters.</p> : null}
+        </div>
+        <div className="action-grid">
+          <button className="secondary-button" disabled={pending || auditState.page <= 1} onClick={() => void loadAudit(auditState.page - 1)} type="button">Previous</button>
+          <button className="secondary-button" disabled={pending || auditState.page >= auditState.totalPages} onClick={() => void loadAudit(auditState.page + 1)} type="button">Next</button>
+          <button className="secondary-button" disabled={pending} onClick={() => void loadAudit(auditState.page)} type="button">Refresh</button>
+        </div>
+      </article>
+    </section>
+  );
+};
+
 const pages = [
   { path: "/", label: "Dashboard", element: <DashboardPage /> },
   { path: "/console", label: "Console", element: <ConsolePage /> },
@@ -475,7 +623,7 @@ const pages = [
   { path: "/mods", label: "Mods", element: <Page title="Mods" description="Mod upload, staging, restart-required workflow, and quarantine rollback will live here." /> },
   { path: "/backups", label: "Backups", element: <Page title="Backups" description="Full-data backups with selectable exclusions and guided restore will live here." /> },
   { path: "/settings", label: "Settings", element: <SettingsPage /> },
-  { path: "/audit", label: "Audit", element: <Page title="Audit" description="Operational audit history is still being recorded on disk and will be surfaced here later." /> }
+  { path: "/audit", label: "Audit", element: <AuditPage /> }
 ];
 
 export const App = () => (

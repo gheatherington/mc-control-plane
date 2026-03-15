@@ -176,6 +176,23 @@ Validation:
 - `docker compose up -d --build panel`
 - `curl` checks for new audit endpoints
 
+Completed:
+
+- Added `/api/audit` in the panel backend, backed by `panel-data/audit/audit.log`.
+- Added newline-delimited JSON parsing with paging, search, and method/action/status filters.
+- Added summary counts for the filtered audit view so recent activity can be scoped quickly.
+- Added a size guardrail that trims the on-disk audit log once it grows past the configured cap.
+- Replaced the placeholder `Audit` route in the frontend with a live filterable audit page.
+
+Validation performed:
+
+- `npm run check` in `panel/`
+- `npm run build` in `panel/`
+- `docker compose config`
+- `docker compose up -d --build panel`
+- `curl http://127.0.0.1:8080/api/audit`
+- `curl 'http://127.0.0.1:8080/api/audit?method=POST&pageSize=5'`
+
 ### Phase 14 Backups
 
 Goals:

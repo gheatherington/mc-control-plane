@@ -47,7 +47,7 @@ docker compose logs -f
 
 Players should connect to `host-or-lan-ip:6767`.
 The admin panel will be available on `http://host-or-lan-ip:8080` once the panel stack is up.
-Core dashboard, player, save, and broadcast actions use the internal Minecraft management API on `25585`; the console page still falls back to scoped RCON for raw commands.
+Core dashboard, player, save, broadcast, and settings actions use the internal Minecraft management API on `25585` where available; the console page still falls back to scoped RCON for raw commands, and the Audit page reads from `panel-data/audit/audit.log`.
 
 ## Operations
 

@@ -1,6 +1,6 @@
 import express, { type Request, type Response } from "express";
 import path from "node:path";
-import { attachAuditLogger } from "./audit";
+import { attachAuditLogger, getAuditLog } from "./audit";
 import { appendConsoleEcho, getRecentLogs, restartServer, runRconCommand, startServer, stopServer } from "./control";
 import { getDashboard, banPlayer, broadcastMessage, deopPlayer, kickPlayer, listPlayers, opPlayer, pardonPlayer, saveWorld, unwhitelistPlayer, whitelistPlayer } from "./minecraft";
 import { config } from "./config";
@@ -19,7 +19,18 @@ const requireName = (req: Request, res: Response) => {
   return value;
 };
 
-const readParam = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
+const readParam = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return typeof first === "string" ? first : "";
+  }
+
+  return "";
+};
 
 export const createApp = () => {
   const app = express();
@@ -67,6 +78,24 @@ export const createApp = () => {
     }
 
     res.json(await updateSettings(values as Record<string, unknown>));
+  });
+
+  app.get("/api/audit", (req: Request, res: Response) => {
+    const pageValue = readParam(req.query.page);
+    const pageSizeValue = readParam(req.query.pageSize);
+    const statusValue = readParam(req.query.status);
+    const page = pageValue ? Number(pageValue) : undefined;
+    const pageSize = pageSizeValue ? Number(pageSizeValue) : undefined;
+    const status = statusValue ? Number(statusValue) : undefined;
+
+    res.json(getAuditLog({
+      action: readParam(req.query.action) || undefined,
+      method: readParam(req.query.method) || undefined,
+      page,
+      pageSize,
+      search: readParam(req.query.search) || undefined,
+      status: Number.isInteger(status) ? status : undefined
+    }));
   });
 
   app.post("/api/server/start", async (_req: Request, res: Response) => {
