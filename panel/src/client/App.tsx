@@ -91,6 +91,31 @@ type AuditResponse = {
   totalPages: number;
 };
 
+type BackupExclusionOption = {
+  description: string;
+  key: string;
+  label: string;
+};
+
+type BackupSummary = {
+  createdAt: string;
+  format: "tar" | "tar.gz" | "tgz";
+  modifiedAt: string;
+  name: string;
+  sizeBytes: number;
+};
+
+type BackupDetails = BackupSummary & {
+  entries: string[];
+  entryCount: number;
+  restoreConfirmation: string;
+};
+
+type BackupsResponse = {
+  backups: BackupSummary[];
+  exclusions: BackupExclusionOption[];
+};
+
 const flattenSettings = (groups: SettingsGroup[]) => groups.flatMap((group) => group.settings);
 
 const toDraftValue = (value: SettingValue) => typeof value === "boolean" ? String(value) : String(value);
@@ -100,6 +125,13 @@ const formatCountMap = (counts: Record<string, number>) => Object.entries(counts
   .slice(0, 4)
   .map(([key, count]) => `${key}: ${count}`)
   .join(" | ");
+
+const formatBytes = (value: number) => {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
 
 const Page = ({ title, description }: { title: string; description: string }) => (
   <section className="panel-card">
@@ -615,13 +647,252 @@ const AuditPage = () => {
   );
 };
 
+const BackupsPage = () => {
+  const [backupsState, setBackupsState] = useState<BackupsResponse | null>(null);
+  const [selectedBackup, setSelectedBackup] = useState<BackupDetails | null>(null);
+  const [backupName, setBackupName] = useState("");
+  const [restoreConfirmation, setRestoreConfirmation] = useState("");
+  const [selectedExclusions, setSelectedExclusions] = useState<string[]>(["logs", "crash-reports"]);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const loadBackups = async (preferredBackupName?: string) => {
+    const response = await fetch("/api/backups");
+    const data = await response.json() as BackupsResponse;
+    setBackupsState(data);
+
+    const nextBackupName = preferredBackupName || selectedBackup?.name || data.backups[0]?.name;
+    if (!nextBackupName) {
+      setSelectedBackup(null);
+      return;
+    }
+
+    const detailResponse = await fetch(`/api/backups/${encodeURIComponent(nextBackupName)}`);
+    if (!detailResponse.ok) {
+      setSelectedBackup(null);
+      return;
+    }
+
+    const detail = await detailResponse.json() as BackupDetails;
+    setSelectedBackup(detail);
+  };
+
+  useEffect(() => {
+    void loadBackups();
+  }, []);
+
+  const toggleExclusion = (key: string) => {
+    setSelectedExclusions((current) => current.includes(key)
+      ? current.filter((value) => value !== key)
+      : [...current, key]);
+  };
+
+  const createArchive = async () => {
+    setPendingAction("create");
+    setError("");
+    setMessage("");
+
+    const response = await fetch("/api/backups", {
+      body: JSON.stringify({
+        exclusions: selectedExclusions,
+        name: backupName
+      }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+    const data = await response.json();
+    setPendingAction(null);
+
+    if (!response.ok) {
+      setError(data.error || "Failed to create backup");
+      return;
+    }
+
+    setBackupName("");
+    setRestoreConfirmation("");
+    setMessage(`Created backup ${data.backup.name}.`);
+    await loadBackups(data.backup.name);
+  };
+
+  const removeArchive = async (name: string) => {
+    setPendingAction(`delete:${name}`);
+    setError("");
+    setMessage("");
+
+    const response = await fetch(`/api/backups/${encodeURIComponent(name)}`, {
+      method: "DELETE"
+    });
+    const data = await response.json();
+    setPendingAction(null);
+
+    if (!response.ok) {
+      setError(data.error || "Failed to delete backup");
+      return;
+    }
+
+    setMessage(`Deleted backup ${name}.`);
+    if (selectedBackup?.name === name) {
+      setSelectedBackup(null);
+      setRestoreConfirmation("");
+    }
+    await loadBackups();
+  };
+
+  const restoreArchive = async () => {
+    if (!selectedBackup) {
+      return;
+    }
+
+    setPendingAction(`restore:${selectedBackup.name}`);
+    setError("");
+    setMessage("");
+
+    const response = await fetch(`/api/backups/${encodeURIComponent(selectedBackup.name)}/restore`, {
+      body: JSON.stringify({
+        confirmation: restoreConfirmation
+      }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+    const data = await response.json();
+    setPendingAction(null);
+
+    if (!response.ok) {
+      setError(data.error || "Failed to restore backup");
+      return;
+    }
+
+    setMessage(
+      data.previousDataRetained
+        ? `Restored ${selectedBackup.name}. Previous data could not be removed automatically.`
+        : `Restored ${selectedBackup.name}.`
+    );
+    setRestoreConfirmation("");
+    await loadBackups(selectedBackup.name);
+  };
+
+  if (!backupsState) {
+    return <Page description="Loading backup inventory from the scoped backups directory..." title="Backups" />;
+  }
+
+  return (
+    <section className="dashboard-grid settings-page">
+      <article className="panel-card logs-card settings-summary-card">
+        <p className="eyebrow">Backup Control</p>
+        <h1>Scoped Data Archives</h1>
+        <p className="body-copy">Archives are created only from the mounted Minecraft data directory and stored under the configured backups root. Restore replaces the live data directory and requires an exact confirmation phrase.</p>
+        <div className="metric-grid">
+          <div><span className="metric-label">Archives</span><strong>{backupsState.backups.length}</strong></div>
+          <div><span className="metric-label">Latest Backup</span><strong>{backupsState.backups[0] ? new Date(backupsState.backups[0].modifiedAt).toLocaleString() : "None"}</strong></div>
+          <div><span className="metric-label">Selected</span><strong>{selectedBackup?.name || "None"}</strong></div>
+        </div>
+        <p className="notice-text">Restore stops the server, replaces the mounted data directory, and starts the server again if it had been running before the restore.</p>
+        {message ? <p className="success-text">{message}</p> : null}
+        {error ? <p className="error-text">{error}</p> : null}
+      </article>
+      <article className="panel-card">
+        <p className="eyebrow">Create Backup</p>
+        <h1>New Archive</h1>
+        <p className="body-copy">Optional labels are sanitized into the archive name. Exclusions only apply to new archives and skip noisy or reproducible paths.</p>
+        <div className="player-form">
+          <input onChange={(event) => setBackupName(event.target.value)} placeholder="Optional label, for example pre-update" value={backupName} />
+        </div>
+        <div className="backup-exclusions">
+          {backupsState.exclusions.map((option) => (
+            <label className="backup-option" key={option.key}>
+              <input
+                checked={selectedExclusions.includes(option.key)}
+                onChange={() => toggleExclusion(option.key)}
+                type="checkbox"
+              />
+              <div>
+                <strong>{option.label}</strong>
+                <p className="body-copy">{option.description}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="action-grid">
+          <button className="primary-button" disabled={!!pendingAction} onClick={() => void createArchive()} type="button">Create Backup</button>
+          <button className="secondary-button" disabled={!!pendingAction} onClick={() => void loadBackups()} type="button">Refresh Inventory</button>
+        </div>
+      </article>
+      <article className="panel-card">
+        <p className="eyebrow">Archive Inventory</p>
+        <h1>{backupsState.backups.length}</h1>
+        <div className="backup-table">
+          <div className="backup-table-header">
+            <span>Name</span>
+            <span>Modified</span>
+            <span>Size</span>
+            <span>Format</span>
+            <span>Actions</span>
+          </div>
+          {backupsState.backups.map((backup) => (
+            <div className={`backup-row ${selectedBackup?.name === backup.name ? "selected" : ""}`} key={backup.name}>
+              <span className="backup-name">{backup.name}</span>
+              <span>{new Date(backup.modifiedAt).toLocaleString()}</span>
+              <span>{formatBytes(backup.sizeBytes)}</span>
+              <span>{backup.format}</span>
+              <span className="backup-row-actions">
+                <button className="secondary-button" disabled={!!pendingAction} onClick={() => void loadBackups(backup.name)} type="button">Inspect</button>
+                <button className="secondary-button" disabled={!!pendingAction} onClick={() => void removeArchive(backup.name)} type="button">Delete</button>
+              </span>
+            </div>
+          ))}
+          {backupsState.backups.length === 0 ? <p className="body-copy">No backups have been created yet.</p> : null}
+        </div>
+      </article>
+      <article className="panel-card">
+        <p className="eyebrow">Restore Flow</p>
+        <h1>{selectedBackup?.name || "Select A Backup"}</h1>
+        {selectedBackup ? (
+          <>
+            <div className="metric-grid">
+              <div><span className="metric-label">Entries</span><strong>{selectedBackup.entryCount}</strong></div>
+              <div><span className="metric-label">Created</span><strong>{new Date(selectedBackup.createdAt).toLocaleString()}</strong></div>
+              <div><span className="metric-label">Size</span><strong>{formatBytes(selectedBackup.sizeBytes)}</strong></div>
+            </div>
+            <p className="body-copy">Type the exact confirmation phrase below to restore this archive.</p>
+            <p className="notice-text">{selectedBackup.restoreConfirmation}</p>
+            <div className="player-form">
+              <input onChange={(event) => setRestoreConfirmation(event.target.value)} placeholder="Paste restore confirmation phrase" value={restoreConfirmation} />
+            </div>
+            <div className="action-grid">
+              <button
+                className="primary-button"
+                disabled={pendingAction !== null || restoreConfirmation !== selectedBackup.restoreConfirmation}
+                onClick={() => void restoreArchive()}
+                type="button"
+              >
+                Restore Backup
+              </button>
+            </div>
+            <div className="backup-entries">
+              <p className="eyebrow">Archive Preview</p>
+              <pre className="log-block">{selectedBackup.entries.join("\n")}</pre>
+            </div>
+          </>
+        ) : (
+          <p className="body-copy">Inspect an archive to review its metadata and restore phrase.</p>
+        )}
+      </article>
+    </section>
+  );
+};
+
 const pages = [
   { path: "/", label: "Dashboard", element: <DashboardPage /> },
   { path: "/console", label: "Console", element: <ConsolePage /> },
   { path: "/players", label: "Players", element: <PlayersPage /> },
   { path: "/files", label: "Files", element: <Page title="Files" description="Scoped file management will operate only inside the mounted Minecraft data directory." /> },
   { path: "/mods", label: "Mods", element: <Page title="Mods" description="Mod upload, staging, restart-required workflow, and quarantine rollback will live here." /> },
-  { path: "/backups", label: "Backups", element: <Page title="Backups" description="Full-data backups with selectable exclusions and guided restore will live here." /> },
+  { path: "/backups", label: "Backups", element: <BackupsPage /> },
   { path: "/settings", label: "Settings", element: <SettingsPage /> },
   { path: "/audit", label: "Audit", element: <AuditPage /> }
 ];

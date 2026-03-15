@@ -1,10 +1,12 @@
 import express, { type Request, type Response } from "express";
 import path from "node:path";
 import { attachAuditLogger, getAuditLog } from "./audit";
+import { createBackup, deleteBackup, getBackupExclusionOptions, inspectBackup, listBackups, restoreBackup, toBackupErrorResponse } from "./backups";
 import { appendConsoleEcho, getRecentLogs, restartServer, runRconCommand, startServer, stopServer } from "./control";
 import { getDashboard, banPlayer, broadcastMessage, deopPlayer, kickPlayer, listPlayers, opPlayer, pardonPlayer, saveWorld, unwhitelistPlayer, whitelistPlayer } from "./minecraft";
 import { config } from "./config";
 import { getSettings, refreshRestartBaseline, updateSettings } from "./settings";
+import { writeAuditEvent } from "./audit";
 
 const publicRoot = path.resolve(__dirname, "../public");
 
@@ -30,6 +32,26 @@ const readParam = (value: unknown): string => {
   }
 
   return "";
+};
+
+const readAuditIp = (req: Request) => [req.ip, req.socket.remoteAddress, "unknown"].find(
+  (value): value is string => typeof value === "string" && value.length > 0
+) || "unknown";
+
+const writeScopedAuditEvent = (req: Request, action: string, status: number, details: string) => {
+  writeAuditEvent({
+    action,
+    actor: resLocalsUser(req),
+    ip: readAuditIp(req),
+    method: req.method,
+    path: details,
+    status
+  });
+};
+
+const resLocalsUser = (req: Request) => {
+  const user = req.res?.locals.user;
+  return typeof user === "string" && user.length > 0 ? user : "anonymous";
 };
 
 export const createApp = () => {
@@ -96,6 +118,77 @@ export const createApp = () => {
       search: readParam(req.query.search) || undefined,
       status: Number.isInteger(status) ? status : undefined
     }));
+  });
+
+  app.get("/api/backups", async (_req: Request, res: Response) => {
+    res.json({
+      backups: await listBackups(),
+      exclusions: getBackupExclusionOptions()
+    });
+  });
+
+  app.get("/api/backups/:name", async (req: Request, res: Response) => {
+    try {
+      res.json(await inspectBackup(readParam(req.params.name)));
+    } catch (error) {
+      const response = toBackupErrorResponse(error);
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.post("/api/backups", async (req: Request, res: Response) => {
+    try {
+      const result = await createBackup({
+        exclusions: req.body?.exclusions,
+        name: typeof req.body?.name === "string" ? req.body.name : undefined
+      });
+
+      writeScopedAuditEvent(req, "backup-create", 200, `/api/backups/${result.backup.name}`);
+      res.json({
+        backup: result.backup,
+        backups: await listBackups(),
+        exclusions: result.exclusions
+      });
+    } catch (error) {
+      const response = toBackupErrorResponse(error);
+      writeScopedAuditEvent(req, "backup-create", response.statusCode, "/api/backups");
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.delete("/api/backups/:name", async (req: Request, res: Response) => {
+    const name = readParam(req.params.name);
+
+    try {
+      const backup = await deleteBackup(name);
+      writeScopedAuditEvent(req, "backup-delete", 200, `/api/backups/${backup.name}`);
+      res.json({
+        backup,
+        backups: await listBackups()
+      });
+    } catch (error) {
+      const response = toBackupErrorResponse(error);
+      writeScopedAuditEvent(req, "backup-delete", response.statusCode, `/api/backups/${name}`);
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.post("/api/backups/:name/restore", async (req: Request, res: Response) => {
+    const name = readParam(req.params.name);
+    const confirmation = typeof req.body?.confirmation === "string" ? req.body.confirmation : "";
+
+    try {
+      const result = await restoreBackup(name, confirmation);
+      writeScopedAuditEvent(req, "backup-restore", 200, `/api/backups/${result.backup.name}/restore`);
+      res.json({
+        ...result,
+        backups: await listBackups()
+      });
+    } catch (error) {
+      const response = toBackupErrorResponse(error);
+      writeScopedAuditEvent(req, "backup-restore", response.statusCode, `/api/backups/${name}/restore`);
+      res.status(response.statusCode).json({ error: response.message });
+    }
   });
 
   app.post("/api/server/start", async (_req: Request, res: Response) => {

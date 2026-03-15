@@ -215,6 +215,29 @@ Validation:
 - `docker compose up -d --build panel`
 - Manual backup create/list/restore smoke tests
 
+Completed:
+
+- Added `/api/backups` endpoints to list, inspect, create, delete, and restore archives inside `/opt/fabric-minecraft-server/backups`.
+- Scoped backup creation to the mounted Minecraft data directory and added exclusion options for `logs`, `crash-reports`, and `usercache.json`.
+- Added confirmation-gated restore handling that validates the archive, stops the server before replacement, and restarts it afterward if it had been running.
+- Added explicit backup audit events for create, delete, and restore attempts alongside the existing API request log.
+- Replaced the placeholder `Backups` route in the frontend with a live archive inventory, metadata viewer, exclusion controls, and guided restore flow.
+
+Validation performed:
+
+- `npm run check` in `panel/`
+- `npm run build` in `panel/`
+- `docker compose config`
+- `docker compose up -d --build panel`
+- `curl http://127.0.0.1:8080/api/backups`
+- `curl -X POST http://127.0.0.1:8080/api/backups -H 'Content-Type: application/json' --data '{"name":"phase-14-smoke","exclusions":["logs","crash-reports"]}'`
+- `curl http://127.0.0.1:8080/api/backups/<created-archive>`
+- `curl -X POST http://127.0.0.1:8080/api/backups/<created-archive>/restore -H 'Content-Type: application/json' --data '{"confirmation":"WRONG"}'`
+- `curl -X DELETE http://127.0.0.1:8080/api/backups/<created-archive>`
+- `curl 'http://127.0.0.1:8080/api/audit?action=backup-create&pageSize=5'`
+- `curl 'http://127.0.0.1:8080/api/audit?action=backup-restore&pageSize=5'`
+- `curl 'http://127.0.0.1:8080/api/audit?action=backup-delete&pageSize=5'`
+
 ### Phase 15 Mods
 
 Goals:
