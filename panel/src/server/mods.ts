@@ -18,7 +18,7 @@ const localFileHeaderSignature = 0x04034b50;
 const maxMetadataBytes = 128 * 1024;
 const maxUploadBytes = 32 * 1024 * 1024;
 const maxZipCommentBytes = 0xffff;
-const jarNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]*\.jar$/;
+const jarNamePattern = /^[A-Za-z0-9][A-Za-z0-9._+-]*\.jar$/;
 const zipMagic = Buffer.from([0x50, 0x4b]);
 
 type ModScope = keyof typeof modRoots;
