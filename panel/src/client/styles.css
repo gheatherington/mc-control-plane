@@ -263,6 +263,10 @@ a {
   padding: 0.85rem 1rem;
 }
 
+.player-form input[type="file"] {
+  padding: 0.7rem 0.85rem;
+}
+
 .audit-filters {
   display: grid;
   gap: 0.75rem;

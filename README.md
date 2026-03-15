@@ -47,7 +47,7 @@ docker compose logs -f
 
 Players should connect to `host-or-lan-ip:6767`.
 The admin panel will be available on `http://host-or-lan-ip:8080` once the panel stack is up.
-Core dashboard, player, save, broadcast, and settings actions use the internal Minecraft management API on `25585` where available; the console page still falls back to scoped RCON for raw commands, and the Audit page reads from `panel-data/audit/audit.log`.
+Core dashboard, player, save, broadcast, and settings actions use the internal Minecraft management API on `25585` where available; the console page still falls back to scoped RCON for raw commands, the Audit page reads from `panel-data/audit/audit.log`, and the Mods page now stages uploads before promoting jars into the live `data/mods` directory.
 
 ## Operations
 
@@ -99,9 +99,11 @@ cd /opt/fabric-minecraft-server/panel-mod
 ## Data Layout
 
 - World, configs, logs, and mods live under `/opt/fabric-minecraft-server/data`.
-- Add mods later to `/opt/fabric-minecraft-server/data/mods`.
+- Active mods live under `/opt/fabric-minecraft-server/data/mods`.
+- Staged mod uploads live under `/opt/fabric-minecraft-server/data/mods-staging`.
 - The Fabric mod workspace for panel integration lives under `/opt/fabric-minecraft-server/panel-mod`.
 - Panel runtime data lives under `/opt/fabric-minecraft-server/panel-data`.
+- Quarantined mods live under `/opt/fabric-minecraft-server/panel-data/mod-quarantine`.
 - Backup archives live under `/opt/fabric-minecraft-server/backups`.
 - Host control scripts for the panel live under `/opt/fabric-minecraft-server/scripts`.
 - The host port is `6767/tcp`, forwarded to the container's internal Minecraft port `25565/tcp`.

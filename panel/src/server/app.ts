@@ -5,7 +5,7 @@ import { createBackup, deleteBackup, getBackupExclusionOptions, inspectBackup, l
 import { appendConsoleEcho, getRecentLogs, restartServer, runRconCommand, startServer, stopServer } from "./control";
 import { getDashboard, banPlayer, broadcastMessage, deopPlayer, kickPlayer, listPlayers, opPlayer, pardonPlayer, saveWorld, unwhitelistPlayer, whitelistPlayer } from "./minecraft";
 import { config } from "./config";
-import { listModsInventory } from "./mods";
+import { deleteMod, installMod, listModsInventory, quarantineMod, rejectUploadedMod, restoreQuarantinedMod, toModErrorResponse, uploadModToStaging } from "./mods";
 import { getSettings, refreshRestartBaseline, updateSettings } from "./settings";
 import { writeAuditEvent } from "./audit";
 
@@ -35,6 +35,8 @@ const readParam = (value: unknown): string => {
   return "";
 };
 
+const isModScope = (value: string): value is "active" | "quarantine" | "staging" => value === "active" || value === "quarantine" || value === "staging";
+
 const readAuditIp = (req: Request) => [req.ip, req.socket.remoteAddress, "unknown"].find(
   (value): value is string => typeof value === "string" && value.length > 0
 ) || "unknown";
@@ -59,7 +61,7 @@ export const createApp = () => {
   const app = express();
 
   app.disable("x-powered-by");
-  app.use(express.json());
+  app.use(express.json({ limit: "64mb" }));
   app.use(express.urlencoded({ extended: false }));
   app.use(attachAuditLogger);
   app.use(express.static(publicRoot));
@@ -130,6 +132,134 @@ export const createApp = () => {
 
   app.get("/api/mods", async (_req: Request, res: Response) => {
     res.json(await listModsInventory());
+  });
+
+  app.post("/api/mods/upload", async (req: Request, res: Response) => {
+    const fileName = typeof req.body?.fileName === "string" ? req.body.fileName : "";
+    const contentBase64 = typeof req.body?.contentBase64 === "string" ? req.body.contentBase64 : "";
+
+    try {
+      const mod = await uploadModToStaging({ contentBase64, fileName });
+      writeScopedAuditEvent(req, "mod-upload", 200, `/api/mods/staging/${mod.fileName}`);
+      res.json({
+        inventory: await listModsInventory(),
+        mod
+      });
+    } catch (error) {
+      const response = toModErrorResponse(error);
+      writeScopedAuditEvent(req, "mod-upload", response.statusCode, "/api/mods/upload");
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.post("/api/mods/staging/:name/install", async (req: Request, res: Response) => {
+    const name = readParam(req.params.name);
+
+    try {
+      const mod = await installMod("staging", name);
+      writeScopedAuditEvent(req, "mod-install", 200, `/api/mods/active/${mod.fileName}`);
+      res.json({
+        inventory: await listModsInventory(),
+        mod
+      });
+    } catch (error) {
+      const response = toModErrorResponse(error);
+      writeScopedAuditEvent(req, "mod-install", response.statusCode, `/api/mods/staging/${name}/install`);
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.post("/api/mods/staging/:name/quarantine", async (req: Request, res: Response) => {
+    const name = readParam(req.params.name);
+
+    try {
+      const mod = await rejectUploadedMod(name);
+      writeScopedAuditEvent(req, "mod-quarantine", 200, `/api/mods/quarantine/${mod.fileName}`);
+      res.json({
+        inventory: await listModsInventory(),
+        mod
+      });
+    } catch (error) {
+      const response = toModErrorResponse(error);
+      writeScopedAuditEvent(req, "mod-quarantine", response.statusCode, `/api/mods/staging/${name}/quarantine`);
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.post("/api/mods/active/:name/quarantine", async (req: Request, res: Response) => {
+    const name = readParam(req.params.name);
+
+    try {
+      const mod = await quarantineMod("active", name);
+      writeScopedAuditEvent(req, "mod-remove", 200, `/api/mods/quarantine/${mod.fileName}`);
+      res.json({
+        inventory: await listModsInventory(),
+        mod
+      });
+    } catch (error) {
+      const response = toModErrorResponse(error);
+      writeScopedAuditEvent(req, "mod-remove", response.statusCode, `/api/mods/active/${name}/quarantine`);
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.post("/api/mods/quarantine/:name/install", async (req: Request, res: Response) => {
+    const name = readParam(req.params.name);
+
+    try {
+      const mod = await installMod("quarantine", name);
+      writeScopedAuditEvent(req, "mod-restore-active", 200, `/api/mods/active/${mod.fileName}`);
+      res.json({
+        inventory: await listModsInventory(),
+        mod
+      });
+    } catch (error) {
+      const response = toModErrorResponse(error);
+      writeScopedAuditEvent(req, "mod-restore-active", response.statusCode, `/api/mods/quarantine/${name}/install`);
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.post("/api/mods/quarantine/:name/restore", async (req: Request, res: Response) => {
+    const name = readParam(req.params.name);
+    const rawTargetScope = typeof req.body?.targetScope === "string" ? req.body.targetScope : "staging";
+    const targetScope = rawTargetScope === "active" ? "active" : "staging";
+
+    try {
+      const mod = await restoreQuarantinedMod(name, targetScope);
+      writeScopedAuditEvent(req, "mod-restore", 200, `/api/mods/${targetScope}/${mod.fileName}`);
+      res.json({
+        inventory: await listModsInventory(),
+        mod
+      });
+    } catch (error) {
+      const response = toModErrorResponse(error);
+      writeScopedAuditEvent(req, "mod-restore", response.statusCode, `/api/mods/quarantine/${name}/restore`);
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.delete("/api/mods/:scope/:name", async (req: Request, res: Response) => {
+    const scope = readParam(req.params.scope);
+    const name = readParam(req.params.name);
+
+    if (!isModScope(scope) || scope === "active") {
+      res.status(400).json({ error: "deletion is supported only for staging or quarantine mods" });
+      return;
+    }
+
+    try {
+      const mod = await deleteMod(scope, name);
+      writeScopedAuditEvent(req, "mod-delete", 200, `/api/mods/${scope}/${mod.fileName}`);
+      res.json({
+        inventory: await listModsInventory(),
+        mod
+      });
+    } catch (error) {
+      const response = toModErrorResponse(error);
+      writeScopedAuditEvent(req, "mod-delete", response.statusCode, `/api/mods/${scope}/${name}`);
+      res.status(response.statusCode).json({ error: response.message });
+    }
   });
 
   app.get("/api/backups/:name", async (req: Request, res: Response) => {

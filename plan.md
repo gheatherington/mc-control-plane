@@ -264,20 +264,34 @@ Implementation steps:
 - Replace the placeholder Mods page with an inventory view, upload form, staged-versus-active sections, quarantine visibility, and restart guidance.
 - Audit all mod uploads, promotions, removals, and quarantine actions, then finish with manual smoke tests that cover upload, stage, install, remove, and rollback paths.
 
-Progress update:
+Completed:
 
-- Started the first Phase 15 slice by adding a backend mod inventory service scoped to `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine`.
-- Added `/api/mods` so the panel can read active, staged, and quarantined jar inventories before any write flows are enabled.
+- Added a backend mod service that scopes all file actions to `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine`, including directory bootstrap, safe file-name validation, and traversal-resistant path resolution.
+- Added `/api/mods` inventory plus write endpoints for upload-to-staging, install/promote, quarantine/remove, restore/rollback, and scoped delete flows.
 - Added jar metadata extraction for inventory views, including file size, modified time, and `fabric.mod.json` fields when present.
-- Replaced the placeholder `Mods` route with a live read-only inventory page that shows the three scopes and restart-required guidance.
-- Upload, promote/install, remove, quarantine, rollback, and explicit mod audit events remain for the next Phase 15 slice.
+- Added quarantine metadata so removed or rejected jars retain previous-scope and reason context for rollback workflows.
+- Added a cross-filesystem move fallback so mod actions work correctly between the mounted data and panel-data roots.
+- Replaced the placeholder `Mods` route with a live panel page that supports staged uploads, active-versus-staged inventory, quarantine visibility, rollback actions, and restart-required guidance.
+- Added explicit mod audit events for uploads, installs, removals, quarantines, restores, and deletes.
 
 Validation:
 
 - `npm run check` in `panel/`
 - `npm run build` in `panel/`
+- `docker compose config`
 - `docker compose up -d --build panel`
-- Manual upload/remove/restart-required smoke tests
+- `curl http://127.0.0.1:8080/api/mods`
+- `curl -X POST http://127.0.0.1:8080/api/mods/upload` with `server-control-bridge-0.1.0.jar`
+- `curl -X POST http://127.0.0.1:8080/api/mods/staging/server-control-bridge-0.1.0.jar/install`
+- `curl -X POST http://127.0.0.1:8080/api/mods/active/server-control-bridge-0.1.0.jar/quarantine`
+- `curl -X POST http://127.0.0.1:8080/api/mods/quarantine/server-control-bridge-0.1.0.jar/restore -d '{"targetScope":"staging"}'`
+- `curl -X DELETE http://127.0.0.1:8080/api/mods/staging/server-control-bridge-0.1.0.jar`
+- `curl -X POST http://127.0.0.1:8080/api/mods/staging/server-control-bridge-0.1.0.jar/quarantine`
+- `curl -X POST http://127.0.0.1:8080/api/mods/quarantine/server-control-bridge-0.1.0.jar/install`
+- `curl -X DELETE http://127.0.0.1:8080/api/mods/quarantine/server-control-bridge-0.1.0.jar`
+- `curl 'http://127.0.0.1:8080/api/audit?action=mod-upload&pageSize=3'`
+- `curl 'http://127.0.0.1:8080/api/audit?action=mod-install&pageSize=3'`
+- `curl 'http://127.0.0.1:8080/api/audit?action=mod-quarantine&pageSize=5'`
 
 ### Phase 16 Files
 

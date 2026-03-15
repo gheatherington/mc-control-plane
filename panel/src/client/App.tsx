@@ -126,10 +126,17 @@ type ModMetadata = {
   version?: string;
 };
 
+type QuarantineMetadata = {
+  previousScope: "active" | "staging";
+  quarantinedAt: string;
+  reason: "delete-active" | "manual-quarantine" | "rejected-upload";
+};
+
 type ModRecord = {
   fabricMetadata: ModMetadata | null;
   fileName: string;
   modifiedAt: string;
+  quarantineMetadata?: QuarantineMetadata;
   scope: "active" | "staging" | "quarantine";
   sizeBytes: number;
 };
@@ -169,6 +176,24 @@ const modScopeLabel: Record<ModRecord["scope"], string> = {
   active: "Active Mods",
   quarantine: "Quarantined Mods",
   staging: "Staged Mods"
+};
+
+const quarantineReasonLabel: Record<NonNullable<QuarantineMetadata["reason"]>, string> = {
+  "delete-active": "Removed from active mods",
+  "manual-quarantine": "Moved out of staging",
+  "rejected-upload": "Rejected after upload"
+};
+
+const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+
+  return window.btoa(binary);
 };
 
 const Page = ({ title, description }: { title: string; description: string }) => (
@@ -928,7 +953,15 @@ const BackupsPage = () => {
   );
 };
 
-const ModList = ({ mods }: { mods: ModRecord[] }) => {
+const ModList = ({
+  mods,
+  onAction,
+  pendingAction
+}: {
+  mods: ModRecord[];
+  onAction: (endpoint: string, options?: RequestInit, successMessage?: string) => Promise<void>;
+  pendingAction: string | null;
+}) => {
   if (mods.length === 0) {
     return <p className="body-copy">No jar files are present in this scope yet.</p>;
   }
@@ -950,11 +983,94 @@ const ModList = ({ mods }: { mods: ModRecord[] }) => {
               {mod.fabricMetadata?.version ? <span className="tag">{mod.fabricMetadata.version}</span> : null}
               {mod.fabricMetadata?.environment ? <span className="tag">{mod.fabricMetadata.environment}</span> : null}
             </div>
+            {mod.quarantineMetadata ? (
+              <p className="body-copy">
+                From {mod.quarantineMetadata.previousScope} on {new Date(mod.quarantineMetadata.quarantinedAt).toLocaleString()}.
+                {" "}
+                {quarantineReasonLabel[mod.quarantineMetadata.reason]}.
+              </p>
+            ) : null}
             {mod.fabricMetadata?.description ? <p className="body-copy">{mod.fabricMetadata.description}</p> : null}
           </div>
           <div className="mod-meta">
             <span><strong>Modified</strong> {new Date(mod.modifiedAt).toLocaleString()}</span>
             <span><strong>Size</strong> {formatBytes(mod.sizeBytes)}</span>
+            <div className="backup-row-actions">
+              {mod.scope === "active" ? (
+                <button
+                  className="secondary-button"
+                  disabled={pendingAction !== null}
+                  onClick={() => void onAction(`/api/mods/active/${encodeURIComponent(mod.fileName)}/quarantine`, { method: "POST" }, `Moved ${mod.fileName} to quarantine.`)}
+                  type="button"
+                >
+                  Remove To Quarantine
+                </button>
+              ) : null}
+              {mod.scope === "staging" ? (
+                <>
+                  <button
+                    className="primary-button"
+                    disabled={pendingAction !== null}
+                    onClick={() => void onAction(`/api/mods/staging/${encodeURIComponent(mod.fileName)}/install`, { method: "POST" }, `Installed ${mod.fileName} into active mods.`)}
+                    type="button"
+                  >
+                    Install Active
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={pendingAction !== null}
+                    onClick={() => void onAction(`/api/mods/staging/${encodeURIComponent(mod.fileName)}/quarantine`, { method: "POST" }, `Moved ${mod.fileName} to quarantine.`)}
+                    type="button"
+                  >
+                    Quarantine
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={pendingAction !== null}
+                    onClick={() => void onAction(`/api/mods/staging/${encodeURIComponent(mod.fileName)}`, { method: "DELETE" }, `Deleted staged mod ${mod.fileName}.`)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </>
+              ) : null}
+              {mod.scope === "quarantine" ? (
+                <>
+                  <button
+                    className="secondary-button"
+                    disabled={pendingAction !== null}
+                    onClick={() => void onAction(
+                      `/api/mods/quarantine/${encodeURIComponent(mod.fileName)}/restore`,
+                      {
+                        body: JSON.stringify({ targetScope: "staging" }),
+                        headers: { "Content-Type": "application/json" },
+                        method: "POST"
+                      },
+                      `Restored ${mod.fileName} to staging.`
+                    )}
+                    type="button"
+                  >
+                    Restore To Staging
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={pendingAction !== null}
+                    onClick={() => void onAction(`/api/mods/quarantine/${encodeURIComponent(mod.fileName)}/install`, { method: "POST" }, `Restored ${mod.fileName} into active mods.`)}
+                    type="button"
+                  >
+                    Restore Active
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={pendingAction !== null}
+                    onClick={() => void onAction(`/api/mods/quarantine/${encodeURIComponent(mod.fileName)}`, { method: "DELETE" }, `Deleted quarantined mod ${mod.fileName}.`)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
       ))}
@@ -964,19 +1080,76 @@ const ModList = ({ mods }: { mods: ModRecord[] }) => {
 
 const ModsPage = () => {
   const [modsState, setModsState] = useState<ModsResponse | null>(null);
-  const [pending, setPending] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   const loadMods = async () => {
-    setPending(true);
     const response = await fetch("/api/mods");
     const data = await response.json() as ModsResponse;
     setModsState(data);
-    setPending(false);
   };
 
   useEffect(() => {
     void loadMods();
   }, []);
+
+  const runAction = async (endpoint: string, options: RequestInit = {}, successMessage = "Mod action completed.") => {
+    setPendingAction(endpoint);
+    setError("");
+    setMessage("");
+
+    const response = await fetch(endpoint, options);
+    const data = await response.json();
+    setPendingAction(null);
+
+    if (!response.ok) {
+      setError(data.error || "Mod action failed");
+      return;
+    }
+
+    setModsState(data.inventory as ModsResponse);
+    setMessage(successMessage);
+  };
+
+  const uploadSelectedFile = async () => {
+    if (!selectedFile) {
+      return;
+    }
+
+    setPendingAction("upload");
+    setError("");
+    setMessage("");
+
+    try {
+      const contentBase64 = arrayBufferToBase64(await selectedFile.arrayBuffer());
+      const response = await fetch("/api/mods/upload", {
+        body: JSON.stringify({
+          contentBase64,
+          fileName: selectedFile.name
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const data = await response.json();
+      setPendingAction(null);
+
+      if (!response.ok) {
+        setError(data.error || "Upload failed");
+        return;
+      }
+
+      setSelectedFile(null);
+      setModsState(data.inventory as ModsResponse);
+      setMessage(`Uploaded ${selectedFile.name} to staging.`);
+    } catch (uploadError) {
+      setPendingAction(null);
+      setError(uploadError instanceof Error ? uploadError.message : "Upload failed");
+    }
+  };
 
   if (!modsState) {
     return <Page description="Loading active, staged, and quarantined mod jars from the scoped server directories..." title="Mods" />;
@@ -989,7 +1162,7 @@ const ModsPage = () => {
       <article className="panel-card logs-card settings-summary-card">
         <p className="eyebrow">Mod Inventory</p>
         <h1>Scoped Fabric Jars</h1>
-        <p className="body-copy">Phase 15 now inventories the live mods directory, a staging area, and panel quarantine. This is read-only for now so active and staged state can be reviewed safely before upload, install, and rollback flows are added.</p>
+        <p className="body-copy">Uploads land in staging first. From there you can install a jar into the active mod set, quarantine it, or delete it. Removing an active mod also moves it into quarantine so rollback stays available.</p>
         <div className="metric-grid">
           <div><span className="metric-label">Active</span><strong>{modsState.mods.active.length}</strong></div>
           <div><span className="metric-label">Staged</span><strong>{modsState.mods.staging.length}</strong></div>
@@ -997,8 +1170,26 @@ const ModsPage = () => {
           <div><span className="metric-label">Total Jars</span><strong>{totalMods}</strong></div>
         </div>
         <p className="notice-text">Any mod add, remove, or move between these scopes will require a server restart before Minecraft loads the changed jar set.</p>
+        {message ? <p className="success-text">{message}</p> : null}
+        {error ? <p className="error-text">{error}</p> : null}
         <div className="action-grid">
-          <button className={pending ? "primary-button is-loading" : "primary-button"} disabled={pending} onClick={() => void loadMods()} type="button">Refresh Inventory</button>
+          <button className={pendingAction === "refresh" ? "primary-button is-loading" : "primary-button"} disabled={pendingAction !== null} onClick={async () => {
+            setPendingAction("refresh");
+            await loadMods();
+            setPendingAction(null);
+          }} type="button">Refresh Inventory</button>
+        </div>
+      </article>
+      <article className="panel-card">
+        <p className="eyebrow">Upload</p>
+        <h1>Stage A Mod</h1>
+        <p className="body-copy">Select a `.jar` file to upload into the staging area. The backend accepts up to 32 MB per upload and keeps active mods untouched until you explicitly install the staged jar.</p>
+        <div className="player-form">
+          <input accept=".jar,application/java-archive" onChange={(event) => setSelectedFile(event.target.files?.[0] || null)} type="file" />
+        </div>
+        <p className="body-copy">Selected file: {selectedFile ? `${selectedFile.name} (${formatBytes(selectedFile.size)})` : "None"}</p>
+        <div className="action-grid">
+          <button className={pendingAction === "upload" ? "primary-button is-loading" : "primary-button"} disabled={!selectedFile || pendingAction !== null} onClick={() => void uploadSelectedFile()} type="button">Upload To Staging</button>
         </div>
       </article>
       {(["active", "staging", "quarantine"] as const).map((scope) => (
@@ -1006,7 +1197,7 @@ const ModsPage = () => {
           <p className="eyebrow">{modScopeLabel[scope]}</p>
           <h1>{modsState.mods[scope].length}</h1>
           <p className="body-copy">Path: <code>{modsState.roots[scope]}</code></p>
-          <ModList mods={modsState.mods[scope]} />
+          <ModList mods={modsState.mods[scope]} onAction={runAction} pendingAction={pendingAction} />
         </article>
       ))}
     </section>
