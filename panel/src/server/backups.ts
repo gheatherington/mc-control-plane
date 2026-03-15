@@ -53,7 +53,9 @@ export type BackupSummary = {
 export type BackupDetails = BackupSummary & {
   entries: string[];
   entryCount: number;
+  includesWorldData: boolean;
   restoreConfirmation: string;
+  worldPaths: string[];
 };
 
 const ensureBackupsRoot = async () => {
@@ -143,6 +145,25 @@ const normalizeExclusions = (value: unknown) => {
   ));
 };
 
+const knownWorldRoots = [
+  "world",
+  "world_nether",
+  "world_the_end"
+];
+
+const detectWorldPaths = (entries: string[]) => {
+  const worldDirectories = new Set<string>();
+
+  for (const root of knownWorldRoots) {
+    const prefix = `${rootName}/${root}`;
+    if (entries.some((entry) => entry === prefix || entry.startsWith(`${prefix}/`))) {
+      worldDirectories.add(root);
+    }
+  }
+
+  return Array.from(worldDirectories).sort();
+};
+
 export const getBackupExclusionOptions = (): BackupExclusionOption[] => [...backupExclusionOptions];
 
 export const listBackups = async (): Promise<BackupSummary[]> => {
@@ -159,12 +180,15 @@ export const listBackups = async (): Promise<BackupSummary[]> => {
 export const inspectBackup = async (name: string): Promise<BackupDetails> => {
   const summary = await createBackupSummary(name);
   const entries = await readArchiveEntries(path.join(config.backupsRoot, name));
+  const worldPaths = detectWorldPaths(entries);
 
   return {
     ...summary,
     entries: entries.slice(0, 200),
     entryCount: entries.length,
-    restoreConfirmation: `RESTORE ${name}`
+    includesWorldData: worldPaths.length > 0,
+    restoreConfirmation: `RESTORE ${name}`,
+    worldPaths
   };
 };
 
