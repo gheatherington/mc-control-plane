@@ -4,13 +4,14 @@
 
 - The live NeoForge server runs on host port `6767`.
 - The panel and Caddy stack are live on host port `8080`.
-- Minecraft's management server is enabled internally on `25585/tcp`.
+- Minecraft's management server remains configured internally on `25585/tcp`, but the current pinned `Minecraft 1.21.1` BMC5 runtime predates that protocol and cannot expose it.
 - The visible panel branding is generic `Modded MC`, while the runtime and service naming are NeoForge-first.
 - `NEOFORGE_VERSION` is required for runtime changes. The current live stack is pinned to `21.1.220` for Minecraft `1.21.1`.
 - Phase 12 is complete: the panel now has a real `Settings` page with structured read/update APIs, runtime-safe management RPC writes, and guarded restart-required file edits where needed.
 - Phase 16 is complete: the panel now has a scoped Files page with approved roots, safe inline editing, and audited write flows.
 - Phase 16 refinements are complete: the Files route now supports both common-root shortcuts and a full mounted data-tree view, with a side-by-side listing/editor workspace, search, file-type badges, and path history controls.
 - Phase 17 is complete: the panel now has a persistent management event bridge with frontend live updates and polling fallback.
+- Historical notes below include earlier `1.21.11` runs where native `25585` support existed; for the current live `1.21.1` BMC5 stack, Docker/file/RCON fallback is the supported control path.
 - The planned Admin Control Plane roadmap is functionally complete; remaining work is cleanup, polish, and any post-plan hardening.
 - Git tracking is now part of the operational workflow: completed phases and meaningful stack, panel, or mod changes should be committed promptly.
 

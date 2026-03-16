@@ -7,13 +7,15 @@ This stack runs a NeoForge Minecraft server in Docker using `itzg/minecraft-serv
 - Live path: `/opt/fabric-minecraft-server`
 - Minecraft host port: `6767/tcp`
 - Admin panel port: `8080/tcp`
-- Internal management API: `25585/tcp` on the Compose network only
+- Internal management API: `25585/tcp` configured on the Compose network, but unsupported on the pinned `Minecraft 1.21.1` BMC5 runtime
 - Runtime services: `neoforge`, `panel`, and `caddy`
 - Memory defaults: `12G` max heap and `2G` initial heap
 
 Shared gameplay modpacks must match between client and server. The live runtime is the Better MC [NEOFORGE] BMC5 server pack on NeoForge, while the panel remains a generic LAN-only admin surface and the Mods page stays focused on Forge/NeoForge server jars.
 
-The panel still prefers Minecraft's built-in management API when it is available, but the current BMC5 runtime does not bind `25585` in this environment. Dashboard, settings, player actions, saves, and broadcasts therefore fall back to the existing Docker, file, and RCON control paths.
+Minecraft's native management protocol was introduced after `1.21.1` and was previously verified on newer `1.21.11` test runs, so the current BMC5 runtime cannot expose `25585` even though the port remains configured. Dashboard, settings, player actions, saves, broadcasts, and live refreshes therefore operate on the supported Docker, file, and RCON fallback paths for this server line.
+
+Docker health state is based on `mc-health`. Because this BMC5 runtime can stall under load, the stack uses a wider healthcheck window and disables AllTheLeaks passive leak-summary reporting to avoid false unhealthy reports during shorter lag spikes.
 
 ## Files
 
@@ -64,7 +66,7 @@ docker compose up -d --build --remove-orphans
 
 ## Panel Features
 
-- Dashboard, players, saves, broadcasts, and settings use the internal Minecraft management API where available.
+- Dashboard, players, saves, broadcasts, and settings prefer the internal Minecraft management API on supported runtimes, but the current `1.21.1` BMC5 stack runs those flows in fallback mode.
 - Console log viewing is panel-managed, but raw command execution still uses scoped RCON.
 - Files now exposes scoped navigation, download, upload, rename, delete, and safe inline text editing inside approved data roots only.
 - Mods stages uploads before promotion and parses Fabric, Forge, and NeoForge metadata when available.

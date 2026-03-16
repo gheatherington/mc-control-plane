@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { config } from "./config";
 import { getContainerState, getRecentLogs, runRconCommand } from "./control";
-import { callManagement } from "./management";
+import { callManagement, getManagementCapability } from "./management";
 
 type NamedEntry = {
   created?: string;
@@ -44,6 +44,41 @@ type RemoteIpBan = {
   ip: string;
   reason?: string;
   source?: string;
+};
+
+const parseOnlinePlayersFromRcon = (raw: string): RemotePlayer[] => {
+  const stripped = raw.replace(/\u001b\[[0-9;]*m/g, "").trim();
+
+  if (!stripped) {
+    return [];
+  }
+
+  const statusLine = stripped
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => /players online:/i.test(line));
+
+  if (!statusLine) {
+    return [];
+  }
+
+  const onlineListMatch = statusLine.match(/players online:\s*(.*)$/i);
+
+  if (!onlineListMatch) {
+    return [];
+  }
+
+  const renderedNames = onlineListMatch[1]?.trim();
+
+  if (!renderedNames) {
+    return [];
+  }
+
+  return renderedNames
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((name) => ({ name }));
 };
 
 const readJsonFile = async <T>(filename: string, fallback: T): Promise<T> => {
@@ -159,6 +194,14 @@ const readSettingsFromManagement = async () => {
   };
 };
 
+const readOnlinePlayersFallback = async () => {
+  try {
+    return parseOnlinePlayersFromRcon(await runRconCommand("list"));
+  } catch {
+    return [];
+  }
+};
+
 const readPlayerName = (entry: NamedEntry | RemotePlayer) => entry.name;
 
 const readOperatorName = (entry: NamedEntry | RemoteOperator) =>
@@ -170,15 +213,20 @@ export const getDashboard = async () => {
     parseProperties(),
     getRecentLogs(20)
   ]);
+  const management = getManagementCapability();
 
   let settings: Awaited<ReturnType<typeof readSettingsFromManagement>> | null = null;
+  let fallbackOnlinePlayers: RemotePlayer[] = [];
 
-  if (state.Running) {
+  if (state.Running && management.supported) {
     try {
       settings = await readSettingsFromManagement();
     } catch {
       settings = null;
+      fallbackOnlinePlayers = await readOnlinePlayersFallback();
     }
+  } else if (state.Running) {
+    fallbackOnlinePlayers = await readOnlinePlayersFallback();
   }
 
   const players = await mergePlayers(settings ? {
@@ -186,7 +234,12 @@ export const getDashboard = async () => {
     onlinePlayers: settings.onlinePlayers,
     ops: [],
     whitelist: []
-  } : undefined);
+  } : {
+    bannedPlayers: [],
+    onlinePlayers: fallbackOnlinePlayers,
+    ops: [],
+    whitelist: []
+  });
 
   return {
     logs: logs.split("\n").filter(Boolean),
@@ -196,14 +249,14 @@ export const getDashboard = async () => {
     },
     server: {
       difficulty: settings?.difficulty || properties.difficulty,
-      managementPort: properties["management-server-port"],
+      management,
       maxPlayers: settings?.maxPlayers || Number(properties["max-players"] || 0),
       motd: settings?.motd || properties.motd,
       onlineMode: properties["online-mode"] === "true",
       port: 6767,
       status: state.Status,
       healthy: state.Health?.Status || "unknown",
-      version: settings?.version || "1.21.1",
+      version: settings?.version || config.minecraftVersion,
       whitelistEnabled: settings?.whitelistEnabled ?? (properties["white-list"] === "true")
     }
   };
@@ -211,6 +264,7 @@ export const getDashboard = async () => {
 
 export const listPlayers = async () => {
   const state = await getContainerState();
+  const management = getManagementCapability();
   let remote: {
     bannedIps: RemoteIpBan[];
     bannedPlayers: RemoteUserBan[];
@@ -218,8 +272,9 @@ export const listPlayers = async () => {
     ops: RemoteOperator[];
     whitelist: RemotePlayer[];
   } | null = null;
+  let fallbackOnlinePlayers: RemotePlayer[] = [];
 
-  if (state.Running) {
+  if (state.Running && management.supported) {
     try {
       const [onlinePlayers, bannedIps, whitelist, ops, bannedPlayers] = await Promise.all([
         callManagement<RemotePlayer[]>("minecraft:players"),
@@ -238,7 +293,10 @@ export const listPlayers = async () => {
       };
     } catch {
       remote = null;
+      fallbackOnlinePlayers = await readOnlinePlayersFallback();
     }
+  } else if (state.Running) {
+    fallbackOnlinePlayers = await readOnlinePlayersFallback();
   }
 
   const [players, bannedIps, whitelist, ops] = await Promise.all([
@@ -247,7 +305,12 @@ export const listPlayers = async () => {
       onlinePlayers: remote.onlinePlayers,
       ops: remote.ops,
       whitelist: remote.whitelist
-    } : undefined),
+    } : {
+      bannedPlayers: [],
+      onlinePlayers: fallbackOnlinePlayers,
+      ops: [],
+      whitelist: []
+    }),
     remote ? Promise.resolve(remote.bannedIps) : readJsonFile<NamedEntry[]>("banned-ips.json", []),
     remote ? Promise.resolve(remote.whitelist) : readJsonFile<NamedEntry[]>("whitelist.json", []),
     remote ? Promise.resolve(remote.ops) : readJsonFile<NamedEntry[]>("ops.json", [])
@@ -255,6 +318,7 @@ export const listPlayers = async () => {
 
   return {
     bannedIps,
+    management,
     ops: ops.map(readOperatorName),
     players,
     whitelist: whitelist.map(readPlayerName)

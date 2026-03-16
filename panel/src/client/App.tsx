@@ -1,6 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 
+type ManagementCapability = {
+  configuredPort: number;
+  host: string;
+  minimumRelease: string;
+  minimumSnapshot: string;
+  reason: string;
+  runtimeVersion: string;
+  supported: boolean;
+  transport: "fallback-only" | "json-rpc";
+};
+
 type DashboardResponse = {
   logs: string[];
   players: {
@@ -10,7 +21,7 @@ type DashboardResponse = {
   server: {
     difficulty: string;
     healthy: string;
-    managementPort: string;
+    management: ManagementCapability;
     maxPlayers: number;
     motd: string;
     onlineMode: boolean;
@@ -32,6 +43,7 @@ type PlayerState = {
 
 type PlayersResponse = {
   bannedIps: Array<{ name: string }>;
+  management: ManagementCapability;
   ops: string[];
   players: PlayerState[];
   whitelist: string[];
@@ -40,7 +52,7 @@ type PlayersResponse = {
 type SettingValue = boolean | number | string;
 
 type Setting = {
-  applyMode: "live-and-persisted" | "restart-required";
+  applyMode: "live-and-persisted" | "persisted-until-restart" | "restart-required";
   description: string;
   key: string;
   label: string;
@@ -59,6 +71,8 @@ type SettingsGroup = {
 
 type SettingsResponse = {
   groups: SettingsGroup[];
+  liveSettingsAvailable: boolean;
+  management: ManagementCapability;
   pendingRestart: {
     keys: string[];
     required: boolean;
@@ -201,11 +215,23 @@ type PanelEvent = {
 };
 
 type BridgeState = {
+  capability: ManagementCapability;
   connected: boolean;
   fallbackActive: boolean;
   lastError: string | null;
   lastNotificationAt: string | null;
   lastOpenAt: string | null;
+};
+
+const defaultManagementCapability: ManagementCapability = {
+  configuredPort: 25585,
+  host: "neoforge",
+  minimumRelease: "1.21.9",
+  minimumSnapshot: "25w35a",
+  reason: "Awaiting management capability state from the panel backend.",
+  runtimeVersion: "unknown",
+  supported: false,
+  transport: "fallback-only"
 };
 
 const flattenSettings = (groups: SettingsGroup[]) => groups.flatMap((group) => group.settings);
@@ -224,6 +250,20 @@ const formatBytes = (value: number) => {
   if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 };
+
+const renderLiveUpdateState = (bridgeState: BridgeState) => {
+  if (!bridgeState.capability.supported) {
+    return `Fallback-only on Minecraft ${bridgeState.capability.runtimeVersion}`;
+  }
+
+  return bridgeState.connected && !bridgeState.fallbackActive
+    ? "Subscriber connected"
+    : "Polling fallback active";
+};
+
+const renderManagementPath = (capability: ManagementCapability) => capability.supported
+  ? `Native management endpoint configured for ${capability.host}:${capability.configuredPort}.`
+  : capability.reason;
 
 const fileTypeBadge = (entry: FileEntry) => {
   if (entry.isDirectory) {
@@ -313,6 +353,7 @@ const LogViewer = ({ logs }: { logs: string[] }) => {
 
 const useLivePanelEvents = (onEvent: (event: PanelEvent) => void) => {
   const [bridgeState, setBridgeState] = useState<BridgeState>({
+    capability: defaultManagementCapability,
     connected: false,
     fallbackActive: true,
     lastError: null,
@@ -423,13 +464,14 @@ const DashboardPage = () => {
           <div><span className="metric-label">Health</span><strong>{dashboard.server.healthy}</strong></div>
           <div><span className="metric-label">Minecraft</span><strong>{dashboard.server.version}</strong></div>
           <div><span className="metric-label">Port</span><strong>{dashboard.server.port}</strong></div>
-          <div><span className="metric-label">Management</span><strong>{dashboard.server.managementPort}</strong></div>
+          <div><span className="metric-label">Management</span><strong>{dashboard.server.management.supported ? `${dashboard.server.management.host}:${dashboard.server.management.configuredPort}` : "Fallback only"}</strong></div>
           <div><span className="metric-label">Players</span><strong>{dashboard.players.online}/{dashboard.server.maxPlayers}</strong></div>
           <div><span className="metric-label">Known Players</span><strong>{dashboard.players.known}</strong></div>
         </div>
         <p className="body-copy">
-          Live updates: {bridgeState.connected && !bridgeState.fallbackActive ? "Subscriber connected" : "Polling fallback active"}
+          Live updates: {renderLiveUpdateState(bridgeState)}
         </p>
+        <p className="body-copy">{renderManagementPath(dashboard.server.management)}</p>
         <p className="body-copy">MOTD: {dashboard.server.motd}</p>
         <div className="action-grid">
           <button className="primary-button" disabled={!!pending} onClick={() => void runServerAction("/api/server/start")} type="button">Start</button>
@@ -516,6 +558,7 @@ const PlayersPage = () => {
   };
 
   const players = useMemo(() => playersState?.players || [], [playersState]);
+  const onlinePlayers = useMemo(() => players.filter((player) => player.online), [players]);
 
   return (
     <section className="dashboard-grid">
@@ -523,7 +566,8 @@ const PlayersPage = () => {
         <p className="eyebrow">Player Management</p>
         <h1>Directory</h1>
         <p className="body-copy">Use exact Minecraft usernames for operator, whitelist, ban, and kick actions.</p>
-        <p className="body-copy">Live updates: {bridgeState.connected && !bridgeState.fallbackActive ? "Subscriber connected" : "Polling fallback active"}</p>
+        <p className="body-copy">Live updates: {renderLiveUpdateState(bridgeState)}</p>
+        <p className="body-copy">{renderManagementPath(playersState?.management || bridgeState.capability)}</p>
         {formReminder ? <p className="notice-text">{formReminder}</p> : null}
         <div className="player-form">
           <input
@@ -564,6 +608,11 @@ const PlayersPage = () => {
       <article className="panel-card">
         <p className="eyebrow">Known Players</p>
         <h1>{players.length}</h1>
+        <p className="body-copy">
+          {onlinePlayers.length > 0
+            ? `Online now: ${onlinePlayers.map((player) => player.name).join(", ")}`
+            : "Online now: nobody"}
+        </p>
         <div className="player-table">
           {players.map((player) => (
             <button
@@ -1194,9 +1243,14 @@ const SettingsPage = () => {
       <article className="panel-card logs-card settings-summary-card">
         <p className="eyebrow">Settings Control</p>
         <h1>Structured Server Settings</h1>
-        <p className="body-copy">Live-safe settings are applied immediately through the internal management API and also persisted back to `server.properties`. Restart-required settings are written safely and held until the next start or restart.</p>
+        <p className="body-copy">
+          {settingsState.liveSettingsAvailable
+            ? "Live-safe settings are applied immediately through the native management API and also persisted back to `server.properties`. Restart-required settings are written safely and held until the next start or restart."
+            : `${settingsState.management.reason} Settings are being persisted to \`server.properties\` and apply on the next start or restart.`}
+        </p>
         <div className="metric-grid">
           <div><span className="metric-label">Server</span><strong>{settingsState.serverRunning ? "Running" : "Stopped"}</strong></div>
+          <div><span className="metric-label">Live Settings</span><strong>{settingsState.liveSettingsAvailable ? "Available" : "Fallback only"}</strong></div>
           <div><span className="metric-label">Pending Restart</span><strong>{settingsState.pendingRestart.required ? "Required" : "No"}</strong></div>
           <div><span className="metric-label">Changed Keys</span><strong>{settingsState.pendingRestart.keys.length}</strong></div>
         </div>
@@ -1226,8 +1280,12 @@ const SettingsPage = () => {
                   <div className="setting-copy">
                     <div className="setting-heading">
                       <strong>{setting.label}</strong>
-                      <span className={`tag ${setting.restartRequired ? "restart-tag" : "live-tag"}`}>
-                        {setting.restartRequired ? "Restart Required" : "Live"}
+                      <span className={`tag ${setting.applyMode === "live-and-persisted" ? "live-tag" : "restart-tag"}`}>
+                        {setting.applyMode === "live-and-persisted"
+                          ? "Live"
+                          : setting.applyMode === "persisted-until-restart"
+                            ? "Fallback Restart"
+                            : "Restart Required"}
                       </span>
                     </div>
                     <p className="body-copy">{setting.description}</p>
@@ -1251,7 +1309,13 @@ const SettingsPage = () => {
                         value={draft[setting.key] ?? toDraftValue(setting.value)}
                       />
                     )}
-                    <span className="setting-mode">{setting.applyMode === "live-and-persisted" ? "Applies immediately and persists" : "Stored now, applied on next restart"}</span>
+                    <span className="setting-mode">
+                      {setting.applyMode === "live-and-persisted"
+                        ? "Applies immediately and persists"
+                        : setting.applyMode === "persisted-until-restart"
+                          ? "Persisted now, applied on the next start or restart"
+                          : "Stored now, applied on next restart"}
+                    </span>
                   </div>
                 </div>
               ))}

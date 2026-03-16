@@ -1,5 +1,6 @@
 export type PanelConfig = {
   containerName: string;
+  minecraftVersion: string;
   managementHost: string;
   managementPort: number;
   managementTls: boolean;
@@ -24,6 +25,7 @@ const parseBoolean = (value: string | undefined, fallback: boolean): boolean => 
 
 export const config: PanelConfig = {
   containerName: process.env.MC_CONTAINER_NAME || "neoforge-minecraft-server",
+  minecraftVersion: process.env.MC_VERSION || "1.21.1",
   managementHost: process.env.MC_MANAGEMENT_HOST || "neoforge",
   managementPort: parsePort(process.env.MC_MANAGEMENT_PORT, 25585),
   managementTls: parseBoolean(process.env.MC_MANAGEMENT_TLS, false),

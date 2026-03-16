@@ -4,6 +4,8 @@ import WebSocket from "ws";
 import { config } from "./config";
 
 const rpcTimeoutMs = 5000;
+const releaseSupportFloor = [1, 21, 9] as const;
+const snapshotSupportFloor = { revision: "a", week: 35, year: 25 } as const;
 
 type RpcResponse =
   | {
@@ -26,6 +28,80 @@ type RpcResponse =
       params?: unknown[];
     };
 
+export type ManagementCapability = {
+  configuredPort: number;
+  host: string;
+  minimumRelease: string;
+  minimumSnapshot: string;
+  reason: string;
+  runtimeVersion: string;
+  supported: boolean;
+  transport: "fallback-only" | "json-rpc";
+};
+
+const compareReleaseVersions = (left: number[], right: readonly number[]) => {
+  const length = Math.max(left.length, right.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = left[index] ?? 0;
+    const rightPart = right[index] ?? 0;
+
+    if (leftPart !== rightPart) {
+      return leftPart - rightPart;
+    }
+  }
+
+  return 0;
+};
+
+const supportsManagementProtocol = (version: string) => {
+  const normalized = version.trim();
+  const releaseMatch = normalized.match(/^(\d+)\.(\d+)\.(\d+)$/);
+
+  if (releaseMatch) {
+    const release = releaseMatch.slice(1).map(Number);
+    return compareReleaseVersions(release, releaseSupportFloor) >= 0;
+  }
+
+  const snapshotMatch = normalized.match(/^(\d{2})w(\d{2})([a-z])$/i);
+
+  if (snapshotMatch) {
+    const [, year, week, revision] = snapshotMatch;
+
+    if (Number(year) !== snapshotSupportFloor.year) {
+      return Number(year) > snapshotSupportFloor.year;
+    }
+
+    if (Number(week) !== snapshotSupportFloor.week) {
+      return Number(week) > snapshotSupportFloor.week;
+    }
+
+    return revision.toLowerCase() >= snapshotSupportFloor.revision;
+  }
+
+  return false;
+};
+
+const managementCapability: ManagementCapability = (() => {
+  const runtimeVersion = config.minecraftVersion;
+  const supported = supportsManagementProtocol(runtimeVersion);
+
+  return {
+    configuredPort: config.managementPort,
+    host: config.managementHost,
+    minimumRelease: releaseSupportFloor.join("."),
+    minimumSnapshot: `${String(snapshotSupportFloor.year).padStart(2, "0")}w${String(snapshotSupportFloor.week).padStart(2, "0")}${snapshotSupportFloor.revision}`,
+    reason: supported
+      ? `Minecraft ${runtimeVersion} can expose the native management protocol on ${config.managementHost}:${config.managementPort}.`
+      : `Minecraft ${runtimeVersion} predates the native management protocol. It starts at 1.21.9+ and snapshot 25w35a, so this server stays on Docker, file, and RCON fallback paths.`,
+    runtimeVersion,
+    supported,
+    transport: supported ? "json-rpc" : "fallback-only"
+  };
+})();
+
+export const getManagementCapability = () => managementCapability;
+
 export const readManagementSecret = async () => {
   const raw = await fs.readFile(path.join(config.dataRoot, "server.properties"), "utf8");
   const secretLine = raw
@@ -42,6 +118,12 @@ export const readManagementSecret = async () => {
 };
 
 export const callManagement = async <T>(method: string, params: unknown[] = []): Promise<T> => {
+  const capability = getManagementCapability();
+
+  if (!capability.supported) {
+    throw new Error(capability.reason);
+  }
+
   const secret = await readManagementSecret();
   const protocol = config.managementTls ? "wss" : "ws";
   const endpoint = `${protocol}://${config.managementHost}:${config.managementPort}/`;

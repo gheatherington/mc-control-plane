@@ -8,13 +8,27 @@ const execFileAsync = promisify(execFile);
 const controlScript = "/srv/minecraft/scripts/server-control.sh";
 const consoleEchoPath = path.join(config.panelDataRoot, "console", "commands.log");
 
+const ansiEscapePattern = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+const nonPrintableControlPattern = /[\u0000-\u0008\u000b-\u001f\u007f]/g;
 const managementNoisePattern = /\[Management server IO #[0-9]+\/INFO\]: RPC Connection #[0-9]+: Management connection (opened|closed) for /;
+const rconNoisePattern = /\[RCON (Listener|Client).*Thread RCON Client .* (started|shutting down)/;
+const allTheLeaksSummaryPattern = /\[AllTheLeaks\/\]: (Listing events\.\.\.|Listing memory leaks so far\.\.\.|B: .* \/ C: .* \/ Diff: .*|Memory Leaks detected: .*|No memory leak detected!|Server Player Logout: \d+|\| Player:|\|- ServerPlayer \(minecraft\): \d+|\| ChunkAccess:|\|- LevelChunk \(minecraft\): \d+)/;
 const logTimestampPattern = /^\[(\d{2}):(\d{2}):(\d{2})\]/;
+
+const sanitizeLogLine = (line: string) => line
+  .replace(/\r/g, "")
+  .replace(ansiEscapePattern, "")
+  .replace(nonPrintableControlPattern, "")
+  .trimEnd();
+
+const isNoiseLine = (line: string) => managementNoisePattern.test(line)
+  || rconNoisePattern.test(line)
+  || allTheLeaksSummaryPattern.test(line);
 
 const normalizeLogLines = (raw: string) => raw
   .split("\n")
-  .map((line) => line.trimEnd())
-  .filter((line) => line.length > 0 && !managementNoisePattern.test(line));
+  .map(sanitizeLogLine)
+  .filter((line) => line.length > 0 && !isNoiseLine(line));
 
 const readLogTimestamp = (line: string) => {
   const match = line.match(logTimestampPattern);

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { config } from "./config";
 import { getContainerState } from "./control";
-import { callManagement } from "./management";
+import { callManagement, getManagementCapability } from "./management";
 
 type SettingType = "boolean" | "enum" | "integer" | "string";
 type SettingValue = boolean | number | string;
@@ -311,7 +311,7 @@ const readRestartBaseline = async (): Promise<PendingRestartState | null> => {
 };
 
 const writeRestartBaseline = async (properties: Record<string, string>) => {
-  const values = Object.fromEntries(getRestartRequiredSettings().map((setting) => [
+  const values = Object.fromEntries(settings.map((setting) => [
     setting.key,
     properties[setting.propertyKey] ?? ""
   ]));
@@ -330,11 +330,20 @@ export const refreshRestartBaseline = async () => {
 
 const readRuntimeValues = async () => {
   const state = await getContainerState();
+  const management = getManagementCapability();
 
   if (!state.Running) {
     return {
       liveAvailable: false,
       running: false,
+      values: {} as Record<string, SettingValue>
+    };
+  }
+
+  if (!management.supported) {
+    return {
+      liveAvailable: false,
+      running: true,
       values: {} as Record<string, SettingValue>
     };
   }
@@ -373,6 +382,11 @@ const buildSettingsPayload = async () => {
   const pendingRestartKeys = getRestartRequiredSettings()
     .filter((setting) => (restartBaseline?.values[setting.key] ?? "") !== (properties[setting.propertyKey] ?? ""))
     .map((setting) => setting.key);
+  const fallbackPendingKeys = settings
+    .filter((setting) => !setting.restartRequired)
+    .filter((setting) => !runtime.liveAvailable && (restartBaseline?.values[setting.key] ?? "") !== (properties[setting.propertyKey] ?? ""))
+    .map((setting) => setting.key);
+  const pendingKeys = Array.from(new Set([...pendingRestartKeys, ...fallbackPendingKeys])).sort();
 
   const groups = Object.entries(groupMetadata).map(([groupId, meta]) => ({
     description: meta.description,
@@ -383,9 +397,14 @@ const buildSettingsPayload = async () => {
         const propertyValue = properties[setting.propertyKey];
         const fallbackValue = setting.normalize(propertyValue);
         const value = runtime.values[setting.key] ?? fallbackValue;
+        const applyMode = setting.restartRequired
+          ? "restart-required"
+          : runtime.liveAvailable
+            ? "live-and-persisted"
+            : "persisted-until-restart";
 
         return {
-          applyMode: setting.restartRequired ? "restart-required" : "live-and-persisted",
+          applyMode,
           description: setting.description,
           key: setting.key,
           label: setting.label,
@@ -401,9 +420,10 @@ const buildSettingsPayload = async () => {
   return {
     groups,
     liveSettingsAvailable: runtime.liveAvailable,
+    management: getManagementCapability(),
     pendingRestart: {
-      keys: pendingRestartKeys,
-      required: pendingRestartKeys.length > 0,
+      keys: pendingKeys,
+      required: pendingKeys.length > 0,
       updatedAt: restartBaseline?.updatedAt || null
     },
     serverRunning: runtime.running

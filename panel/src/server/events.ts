@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { getDashboard, listPlayers } from "./minecraft";
-import { callManagement, readManagementSecret } from "./management";
+import { getManagementCapability, readManagementSecret } from "./management";
 import WebSocket from "ws";
 import { config } from "./config";
 
@@ -26,6 +26,7 @@ export type PanelEvent = {
 };
 
 type BridgeState = {
+  capability: ReturnType<typeof getManagementCapability>;
   connected: boolean;
   fallbackActive: boolean;
   lastError: string | null;
@@ -46,6 +47,7 @@ let pingTimer: NodeJS.Timeout | null = null;
 let previousDashboard: DashboardState | null = null;
 let previousPlayers: PlayersState | null = null;
 let bridgeState: BridgeState = {
+  capability: getManagementCapability(),
   connected: false,
   fallbackActive: true,
   lastError: null,
@@ -202,7 +204,7 @@ const handleSocketMessage = (rawMessage: WebSocket.RawData) => {
 };
 
 const scheduleReconnect = () => {
-  if (reconnectTimer) {
+  if (reconnectTimer || !getManagementCapability().supported) {
     return;
   }
 
@@ -226,6 +228,17 @@ const clearSocketState = () => {
 
 const connectSubscriber = async () => {
   clearSocketState();
+  const capability = getManagementCapability();
+
+  if (!capability.supported) {
+    updateBridgeState({
+      capability,
+      connected: false,
+      fallbackActive: true,
+      lastError: null
+    });
+    return;
+  }
 
   try {
     const secret = await readManagementSecret();
