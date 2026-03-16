@@ -204,6 +204,18 @@ const Page = ({ title, description }: { title: string; description: string }) =>
   </section>
 );
 
+const BackupProgressIndicator = ({ label, detail }: { label: string; detail: string }) => (
+  <div className="backup-progress-card" role="status" aria-live="polite">
+    <div className="backup-progress-copy">
+      <strong>{label}</strong>
+      <span>{detail}</span>
+    </div>
+    <div className="backup-progress-track" aria-hidden="true">
+      <div className="backup-progress-bar" />
+    </div>
+  </div>
+);
+
 const LogViewer = ({ logs }: { logs: string[] }) => {
   const logRef = useRef<HTMLPreElement | null>(null);
 
@@ -720,6 +732,9 @@ const BackupsPage = () => {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const creatingBackup = pendingAction === "create";
+  const restoringBackup = pendingAction !== null && pendingAction.startsWith("restore:");
+  const activeRestoreName = restoringBackup ? pendingAction.slice("restore:".length) : "";
 
   const loadBackups = async (preferredBackupName?: string) => {
     setInspectTarget(preferredBackupName || null);
@@ -862,6 +877,8 @@ const BackupsPage = () => {
           <div><span className="metric-label">Selected</span><strong>{inspectTarget || selectedBackup?.name || "None"}</strong></div>
         </div>
         <p className="notice-text">Restore stops the server, replaces the mounted data directory, and starts the server again if it had been running before the restore.</p>
+        {creatingBackup ? <BackupProgressIndicator detail="Packing the mounted data directory into a new archive. This can take a while for large worlds." label="Creating Backup" /> : null}
+        {restoringBackup ? <BackupProgressIndicator detail={`Restoring ${activeRestoreName}. The server data is being replaced and the service may restart if it was running.`} label="Restoring Backup" /> : null}
         {message ? <p className="success-text">{message}</p> : null}
         {error ? <p className="error-text">{error}</p> : null}
       </article>
@@ -869,6 +886,7 @@ const BackupsPage = () => {
         <p className="eyebrow">Create Backup</p>
         <h1>New Archive</h1>
         <p className="body-copy">Optional labels are sanitized into the archive name. Checked options are included in the new archive. `World Data` starts enabled so world saves are backed up by default.</p>
+        {creatingBackup ? <BackupProgressIndicator detail="Archive creation is running. Inputs stay locked until the archive write completes." label="Archive In Progress" /> : null}
         <div className="player-form">
           <input onChange={(event) => setBackupName(event.target.value)} placeholder="Optional label, for example pre-update" value={backupName} />
         </div>
@@ -941,17 +959,20 @@ const BackupsPage = () => {
             <p className="body-copy">Detected world paths: {selectedBackup.worldPaths.length > 0 ? selectedBackup.worldPaths.join(", ") : "None detected in this archive."}</p>
             <p className="body-copy">Type the exact confirmation phrase below to restore this archive.</p>
             <p className="notice-text">{selectedBackup.restoreConfirmation}</p>
+            {restoringBackup && activeRestoreName === selectedBackup.name ? (
+              <BackupProgressIndicator detail="The archive is being unpacked and applied to the live data directory." label="Restore In Progress" />
+            ) : null}
             <div className="player-form">
               <input onChange={(event) => setRestoreConfirmation(event.target.value)} placeholder="Paste restore confirmation phrase" value={restoreConfirmation} />
             </div>
             <div className="action-grid">
               <button
-                className="primary-button"
+                className={restoringBackup && activeRestoreName === selectedBackup.name ? "primary-button is-loading" : "primary-button"}
                 disabled={pendingAction !== null || restoreConfirmation !== selectedBackup.restoreConfirmation}
                 onClick={() => void restoreArchive()}
                 type="button"
               >
-                Restore Backup
+                {restoringBackup && activeRestoreName === selectedBackup.name ? "Restoring..." : "Restore Backup"}
               </button>
             </div>
             <div className="backup-entries">

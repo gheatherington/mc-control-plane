@@ -385,6 +385,61 @@ a {
   margin-top: 1.5rem;
 }
 
+.backup-progress-card {
+  background:
+    linear-gradient(135deg, rgba(255, 159, 109, 0.12), rgba(255, 107, 74, 0.08)),
+    rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 179, 138, 0.24);
+  border-radius: 1rem;
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.backup-progress-copy {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.backup-progress-copy strong {
+  color: #fff3eb;
+}
+
+.backup-progress-copy span {
+  color: rgba(244, 239, 230, 0.8);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.backup-progress-track {
+  background: rgba(7, 6, 5, 0.55);
+  border-radius: 999px;
+  height: 0.7rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.backup-progress-bar {
+  animation: backup-progress-sweep 1.4s ease-in-out infinite;
+  background: linear-gradient(90deg, #ff9f6d 0%, #ffd08f 50%, #ff6b4a 100%);
+  border-radius: 999px;
+  height: 100%;
+  left: -35%;
+  position: absolute;
+  width: 35%;
+}
+
+@keyframes backup-progress-sweep {
+  0% {
+    left: -35%;
+  }
+
+  100% {
+    left: 100%;
+  }
+}
+
 .mod-table {
   display: grid;
   gap: 0.85rem;
