@@ -1,3 +1,5 @@
+name: forge-minecraft-server
+
 services:
   forge:
     image: itzg/minecraft-server:java21
