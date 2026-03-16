@@ -23,8 +23,8 @@ const parseBoolean = (value: string | undefined, fallback: boolean): boolean => 
 };
 
 export const config: PanelConfig = {
-  containerName: process.env.MC_CONTAINER_NAME || "forge-minecraft-server",
-  managementHost: process.env.MC_MANAGEMENT_HOST || "forge",
+  containerName: process.env.MC_CONTAINER_NAME || "neoforge-minecraft-server",
+  managementHost: process.env.MC_MANAGEMENT_HOST || "neoforge",
   managementPort: parsePort(process.env.MC_MANAGEMENT_PORT, 25585),
   managementTls: parseBoolean(process.env.MC_MANAGEMENT_TLS, false),
   dataRoot: process.env.MC_DATA_ROOT || "/srv/minecraft/data",

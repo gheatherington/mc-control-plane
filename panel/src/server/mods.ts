@@ -25,11 +25,11 @@ type ModScope = keyof typeof modRoots;
 type ModWriteScope = Exclude<ModScope, "active"> | "active";
 type QuarantineReason = "delete-active" | "manual-quarantine" | "rejected-upload";
 
-type ModLoader = "fabric" | "forge";
+type ModLoader = "fabric" | "forge" | "neoforge";
 
 type ModMetadata = {
   description?: string;
-  descriptor: "fabric.mod.json" | "META-INF/mods.toml";
+  descriptor: "fabric.mod.json" | "META-INF/mods.toml" | "META-INF/neoforge.mods.toml";
   id: string;
   loader: ModLoader;
   name?: string;
@@ -295,6 +295,24 @@ const parseForgeMetadata = (raw: string): ModMetadata | null => {
   };
 };
 
+const parseNeoForgeMetadata = (raw: string): ModMetadata | null => {
+  const id = readTomlString(raw, "modId");
+
+  if (!id) {
+    return null;
+  }
+
+  return {
+    descriptor: "META-INF/neoforge.mods.toml",
+    description: readTomlString(raw, "description"),
+    id,
+    loader: "neoforge",
+    name: readTomlString(raw, "displayName"),
+    side: readTomlString(raw, "side"),
+    version: readTomlString(raw, "version")
+  };
+};
+
 const readJarMetadata = async (filePath: string) => {
   try {
     const buffer = await fs.readFile(filePath);
@@ -302,6 +320,12 @@ const readJarMetadata = async (filePath: string) => {
 
     if (rawMetadata) {
       return parseFabricMetadata(JSON.parse(rawMetadata.toString("utf8")));
+    }
+
+    const rawNeoForgeMetadata = await extractZipEntry(buffer, "META-INF/neoforge.mods.toml");
+
+    if (rawNeoForgeMetadata) {
+      return parseNeoForgeMetadata(rawNeoForgeMetadata.toString("utf8"));
     }
 
     const rawForgeMetadata = await extractZipEntry(buffer, "META-INF/mods.toml");

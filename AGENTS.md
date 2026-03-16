@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This live directory is the canonical home for the Forge Minecraft server. Keep the root small and operational:
+This live directory is the canonical home for the NeoForge Minecraft server. Keep the root small and operational:
 
 - `docker-compose.yml`: Compose stack using `itzg/minecraft-server:java21`.
 - `.env`: active runtime configuration used by Docker Compose.
@@ -16,7 +16,7 @@ Runtime server data lives in `/opt/fabric-minecraft-server/data`. That includes 
 This server was built with the following fixed decisions:
 
 - Minecraft `1.21.11`, not `latest`.
-- Forge-ready only; mods will be added later in `/opt/fabric-minecraft-server/data/mods`.
+- NeoForge-first runtime; shared gameplay mods must match on both client and server.
 - Live path: `/opt/fabric-minecraft-server`.
 - Memory target: `12G` max heap, `2G` initial heap.
 - Host game port: `6767/tcp`, forwarded to container `25565/tcp`.
@@ -24,7 +24,7 @@ This server was built with the following fixed decisions:
 - Internal Minecraft management API: `25585/tcp` on the Compose network only.
 - Owner: `brayden:brayden` for the stack directory and data directory.
 - Container UID/GID mapping: `1000:1000`.
-- Current running services: `forge`, `panel`, and `caddy`.
+- Current running services: `neoforge`, `panel`, and `caddy`.
 - Panel access model: single-admin LAN page with no auth layer.
 
 The original source folder under `/home/brayden/fabric-minecraft-server` was cleaned up after deployment. Ongoing management should happen only from `/opt/fabric-minecraft-server`.
@@ -38,7 +38,7 @@ Run from `/opt/fabric-minecraft-server` unless noted:
 - `docker compose logs -f`: follow server logs.
 - `docker compose restart`: restart the service after config or mod changes.
 - `docker compose down`: stop the service.
-- `docker attach forge-minecraft-server`: open the live server console.
+- `docker attach neoforge-minecraft-server`: open the live server console.
 
 If Docker commands fail with a socket permission error, re-login so the `docker` group membership applies to `brayden`.
 
@@ -51,7 +51,7 @@ There is no formal test suite. Minimum validation:
 - run `bash -n` on every edited shell script;
 - run `docker compose config` after Compose or env changes;
 - run `docker compose up -d` after config changes that affect boot;
-- inspect `docker compose logs -f` for Forge startup errors;
+- inspect `docker compose logs -f` for NeoForge startup errors;
 - confirm files are still written under `data/` with `brayden` ownership.
 
 ## Commit & Pull Request Guidelines
@@ -75,7 +75,8 @@ Do not expose secrets or back up `data/` carelessly. Keep the Minecraft version 
 - Phase 12 UI refinements are complete: the settings page layout now keeps the sidebar usable, avoids input overlap, and uses a masonry-style group layout so cards flow naturally as they wrap.
 - Phase 13 is complete: the panel now exposes the on-disk audit trail through `/api/audit` and a live Audit page with paging, filtering, summary counts, and size guardrails for `panel-data/audit/audit.log`.
 - Phase 14 is complete: the panel now exposes scoped backup APIs and a live Backups page for archive create/list/inspect/delete flows, exclusion-aware backup creation, explicit world-data coverage for mounted saves, confirmation-gated restore requests, and explicit backup audit events under `/opt/fabric-minecraft-server/backups`.
-- Phase 15 is complete: the panel now exposes scoped mod-management APIs and a live Mods page for staged jar uploads, active install promotion, quarantine/remove flows, rollback restores, loader metadata inventory for Fabric and Forge jars, and explicit mod audit events across `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine`.
+- Phase 15 is complete: the panel now exposes scoped mod-management APIs and a live Mods page for staged jar uploads, active install promotion, quarantine/remove flows, rollback restores, loader metadata inventory for Fabric, Forge, and NeoForge jars, and explicit mod audit events across `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine`.
 - The host-local Java 21 and Gradle toolchain remains installed under `/home/brayden/.local/opt`, and `panel-mod/` remains available as a legacy Fabric mod workspace if older bridge experiments need to be referenced.
-- Forge migration is complete: the runtime now uses `TYPE=FORGE`, the live service names are `forge-minecraft-server`, `forge-minecraft-panel`, and `forge-minecraft-panel-caddy`, and the panel branding plus mod inventory now reflect Forge-first operation.
-- NeoForge migration planning is complete: `migration_plan.md` now defines the next rebaseline from Forge to NeoForge, including the required `plan.md` updates, generic `Modded MC` panel branding, NeoForge metadata support, Phase 16/17 implementation order, review-agent checklists, and interactive-prompt rules for high-impact choices during implementation.
+- NeoForge migration is complete: the runtime now uses `TYPE=NEOFORGE`, `NEOFORGE_VERSION=beta` because the current image helper rejects exact `21.11.x-beta` tags, and the live service names are `neoforge-minecraft-server`, `neoforge-minecraft-panel`, and `neoforge-minecraft-panel-caddy`.
+- Phase 16 is complete: the panel now exposes scoped file-management APIs and a live Files page for approved data roots, traversal-resistant navigation, download/upload flows, guarded rename/delete actions, safe inline editing for small text configs, and explicit file audit events.
+- Phase 17 is complete: the panel now keeps a persistent management API subscriber, pushes dashboard and player refreshes over SSE to the frontend, keeps a polling fallback when subscription coverage is unavailable or incomplete, and keeps RCON narrowed to raw console commands only.

@@ -2,11 +2,14 @@
 
 ## Active Summary
 
-- The live Forge server runs on host port `6767` and is healthy.
+- The live NeoForge server runs on host port `6767`.
 - The panel and Caddy stack are live on host port `8080`.
 - Minecraft's management server is enabled internally on `25585/tcp`.
-- The panel is now being simplified to a single-admin LAN control page with no auth layer.
+- The visible panel branding is generic `Modded MC`, while the runtime and service naming are NeoForge-first.
+- `NEOFORGE_VERSION` is required for runtime changes. The current live stack uses `beta` because the image helper rejects exact `21.11.x-beta` tags.
 - Phase 12 is complete: the panel now has a real `Settings` page with structured read/update APIs, runtime-safe management RPC writes, and guarded restart-required file edits where needed.
+- Phase 16 is complete: the panel now has a scoped Files page with approved roots, safe inline editing, and audited write flows.
+- Phase 17 is complete: the panel now has a persistent management event bridge with frontend live updates and polling fallback.
 - Git tracking is now part of the operational workflow: completed phases and meaningful stack, panel, or mod changes should be committed promptly.
 
 ## Phase Log
@@ -58,7 +61,7 @@ Validation:
 - `docker compose up -d --build panel`
 - `curl -X POST http://127.0.0.1:8080/api/server/save`
 - `curl -H 'Content-Type: application/json' -d '{"message":"Panel broadcast verify 2118"}' http://127.0.0.1:8080/api/server/broadcast`
-- `docker compose logs --tail=20 forge`
+- `docker compose logs --tail=20 neoforge`
 
 ### Phase 10 Complete
 
@@ -150,8 +153,8 @@ Validation performed:
 - `docker compose config`
 - `docker compose up -d --build panel`
 - `curl http://127.0.0.1:8080/api/settings`
-- `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"motd":"A Forge-ready Minecraft server [panel test]"}}'`
-- `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"motd":"A Forge-ready Minecraft server"}}'`
+- `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"motd":"A NeoForge-ready Minecraft server [panel test]"}}'`
+- `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"motd":"A NeoForge-ready Minecraft server"}}'`
 - `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"pvp":"false"}}'`
 - `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"pvp":"true"}}'`
 
@@ -257,7 +260,7 @@ Implementation steps:
 
 - Add a backend mod service that scopes all filesystem actions to `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine` with path normalization and traversal protection.
 - Build mod inventory endpoints first so the panel can distinguish active mods, staged uploads, and quarantined files before any write flows are added.
-- Extract practical jar metadata for listing views, such as file size, modified time, and loader metadata from `fabric.mod.json` or `META-INF/mods.toml` when present.
+- Extract practical jar metadata for listing views, such as file size, modified time, and loader metadata from `fabric.mod.json`, `META-INF/mods.toml`, or `META-INF/neoforge.mods.toml` when present.
 - Add upload flows into staging before active install so new jars can be reviewed, promoted, or deleted without immediately affecting the live server.
 - Add promote/install and remove actions with explicit restart-required messaging and a clear distinction between files that are live on disk versus loaded in the running server.
 - Add quarantine and rollback handling so bad uploads or rejected installs can be moved out of active paths instead of being hard-deleted first.
@@ -268,7 +271,7 @@ Completed:
 
 - Added a backend mod service that scopes all file actions to `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine`, including directory bootstrap, safe file-name validation, and traversal-resistant path resolution.
 - Added `/api/mods` inventory plus write endpoints for upload-to-staging, install/promote, quarantine/remove, restore/rollback, and scoped delete flows.
-- Added jar metadata extraction for inventory views, including file size, modified time, and recognized Fabric or Forge descriptor fields when present.
+- Added jar metadata extraction for inventory views, including file size, modified time, and recognized Fabric, Forge, or NeoForge descriptor fields when present.
 - Added quarantine metadata so removed or rejected jars retain previous-scope and reason context for rollback workflows.
 - Added a cross-filesystem move fallback so mod actions work correctly between the mounted data and panel-data roots.
 - Replaced the placeholder `Mods` route with a live panel page that supports staged uploads, active-versus-staged inventory, quarantine visibility, rollback actions, and restart-required guidance.
@@ -293,7 +296,28 @@ Validation:
 - `curl 'http://127.0.0.1:8080/api/audit?action=mod-install&pageSize=3'`
 - `curl 'http://127.0.0.1:8080/api/audit?action=mod-quarantine&pageSize=5'`
 
-### Phase 16 Files
+### NeoForge Migration Complete
+
+Completed:
+
+- Updated `plan.md` and operator docs so the roadmap and runtime guidance are NeoForge-first.
+- Changed Compose runtime wiring from Forge to NeoForge and set `NEOFORGE_VERSION=beta` because the current image helper rejects exact `21.11.x-beta` tags.
+- Renamed the live service and container defaults to `neoforge-*`.
+- Changed visible panel branding to generic `Modded MC` while keeping the Mods route explicitly about Forge/NeoForge server jars.
+- Extended mod metadata parsing so NeoForge descriptors are a first-class loader type.
+
+Validation:
+
+- `bash -n scripts/server-control.sh`
+- `npm run check` in `panel/`
+- `npm run build` in `panel/`
+- `docker compose config`
+
+Migration dependency note:
+
+- Phase 16 and Phase 17 begin only after the NeoForge runtime and panel compatibility work above is complete and validated.
+
+### Phase 16 Files Complete
 
 Goals:
 
@@ -301,20 +325,30 @@ Goals:
 
 Scope:
 
-- Restrict all file actions to approved roots under `data/`.
+- Restrict all file actions to approved roots under `data/`, including `config/`, `defaultconfigs/`, `mods/`, `mods-staging/`, `world/`, and approved top-level admin files.
 - Add list/read/download/upload/rename/delete endpoints with path normalization and traversal protection.
-- Add simple editor support for small text files such as config JSON, properties, and whitelist files.
+- Add simple editor support for small text files such as NeoForge config TOML, properties, JSON, and allowlist/admin files.
 - Clearly separate safe text edits from binary download/upload actions.
 - Audit destructive file operations.
+
+Completed:
+
+- Added a backend file service with approved-root scoping, traversal blocking, symlink escape blocking, hidden-path blocking, and admin-file allowlisting.
+- Added `/api/files`, `/api/files/content`, `/api/files/download`, `/api/files/upload`, `/api/files/write`, `/api/files/rename`, and `DELETE /api/files`.
+- Added a live Files page with root navigation, breadcrumbs, guarded delete actions, download flows, upload support, rename support, and inline editing for small safe text files.
+- Added explicit file audit events for upload, write, rename, and delete operations.
 
 Validation:
 
 - `npm run check` in `panel/`
 - `npm run build` in `panel/`
-- `docker compose up -d --build panel`
-- Manual file traversal and blocked-path tests
+- `docker compose config`
+- blocked traversal tests against disallowed and hidden paths
+- safe text-edit tests against NeoForge config files
+- binary upload/download tests
+- audit verification for file-write, file-upload, file-rename, and file-delete actions
 
-### Phase 17 Realtime And Console Cleanup
+### Phase 17 Realtime And Console Cleanup Complete
 
 Goals:
 
@@ -329,9 +363,19 @@ Scope:
 - Reassess the console page and replace any remaining RCON-backed actions if a safe non-RCON path becomes available.
 - Keep polling as a fallback if the notification channel is unavailable.
 
+Completed:
+
+- Added a persistent management API subscriber in the panel backend and exposed a panel SSE stream at `/api/events/stream`.
+- Forwarded subscriber notifications into dashboard/player refresh events and kept a polling diff fallback when subscription coverage is unavailable or incomplete.
+- Updated the Dashboard and Players pages to consume the live event stream first and fall back to polling when the bridge is unavailable.
+- Kept console raw-command execution on scoped RCON only, while making the console wording explicit that this is the remaining fallback path.
+
 Validation:
 
 - `npm run check` in `panel/`
 - `npm run build` in `panel/`
-- `docker compose up -d --build panel`
-- Manual live-update verification during join/leave/save/admin actions
+- `docker compose config`
+- live join/leave verification
+- live save/admin-change verification
+- fallback verification with the subscriber unavailable
+- console regression checks

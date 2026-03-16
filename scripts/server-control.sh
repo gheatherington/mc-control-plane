@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-container_name="${MC_CONTAINER_NAME:-forge-minecraft-server}"
+container_name="${MC_CONTAINER_NAME:-neoforge-minecraft-server}"
 
 require_arg() {
   if [ "$#" -lt 1 ]; then

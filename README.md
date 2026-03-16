@@ -1,43 +1,30 @@
-# Forge Minecraft Server
+# NeoForge Minecraft Server
 
-This stack runs a Forge-ready Minecraft server in Docker using `itzg/minecraft-server`, pinned to Minecraft `1.21.11`.
+This stack runs a NeoForge Minecraft server in Docker using `itzg/minecraft-server:java21`, pinned to Minecraft `1.21.11` and configured for the NeoForge `beta` channel because the current image helper rejects exact `21.11.x-beta` tags.
 
-## Todo
+## Runtime
 
-1. Install Docker Engine and the Compose plugin.
-2. Copy this stack to `/opt/fabric-minecraft-server`.
-3. Review `.env` and adjust values if needed.
-4. Start the server and let Forge generate the initial `/data` layout.
-5. Add mods later under `/opt/fabric-minecraft-server/data/mods`.
+- Live path: `/opt/fabric-minecraft-server`
+- Minecraft host port: `6767/tcp`
+- Admin panel port: `8080/tcp`
+- Internal management API: `25585/tcp` on the Compose network only
+- Runtime services: `neoforge`, `panel`, and `caddy`
+- Memory defaults: `12G` max heap and `2G` initial heap
+
+Shared gameplay modpacks must match between client and server. The panel branding is generic `Modded MC`, but the runtime is NeoForge-first and the Mods page is specifically for Forge/NeoForge server jars.
 
 ## Files
 
-- `docker-compose.yml`: Main container definition.
-- `.env.example`: Default environment settings. Copy to `.env` on first deploy.
-- `install-docker-ubuntu-24.04.sh`: Root-run installer for Docker on Ubuntu 24.04.
-- `deploy-to-opt.sh`: Root-run deploy helper that copies this stack into `/opt`.
+- `docker-compose.yml`: Compose stack for NeoForge, panel, and Caddy.
+- `.env`: Active runtime configuration.
+- `.env.example`: Reference defaults.
+- `plan.md`: Main implementation roadmap and completed phase log.
+- `migration_plan.md`: NeoForge migration handoff and remaining-phase checklist.
+- `panel/`: Panel backend and frontend.
+- `panel-mod/`: Legacy Fabric bridge workspace kept only for historical reference.
+- `scripts/server-control.sh`: Scoped Docker and RCON wrapper.
 
-## Install Docker
-
-Run this as root:
-
-```bash
-cd /home/brayden/fabric-minecraft-server
-sudo bash ./install-docker-ubuntu-24.04.sh
-```
-
-After installation, log out and log back in so the `docker` group membership takes effect.
-
-## Deploy To /opt
-
-Run this as root:
-
-```bash
-cd /home/brayden/fabric-minecraft-server
-sudo bash ./deploy-to-opt.sh
-```
-
-## Start The Server
+## Start
 
 ```bash
 cd /opt/fabric-minecraft-server
@@ -45,25 +32,19 @@ docker compose up -d
 docker compose logs -f
 ```
 
-Players should connect to `host-or-lan-ip:6767`.
-The admin panel will be available on `http://host-or-lan-ip:8080` once the panel stack is up.
-Core dashboard, player, save, broadcast, and settings actions use the internal Minecraft management API on `25585` where available; the console page still falls back to scoped RCON for raw commands, the Audit page reads from `panel-data/audit/audit.log`, and the Mods page now stages uploads before promoting jars into the live `data/mods` directory.
+Players connect to `host-or-lan-ip:6767`. The admin panel is available at `http://host-or-lan-ip:8080`.
 
 ## Operations
 
-Stop:
-
 ```bash
 cd /opt/fabric-minecraft-server
-docker compose down
-```
-
-Restart:
-
-```bash
-cd /opt/fabric-minecraft-server
+docker compose ps
 docker compose restart
+docker compose down
+docker attach neoforge-minecraft-server
 ```
+
+Detach from the console with `Ctrl+P`, then `Ctrl+Q`.
 
 Restart only the admin stack:
 
@@ -72,46 +53,39 @@ cd /opt/fabric-minecraft-server
 docker compose restart panel caddy
 ```
 
-Update the container image:
+Rebuild and recreate after panel or runtime changes:
 
 ```bash
 cd /opt/fabric-minecraft-server
-docker compose pull
-docker compose up -d
+docker compose up -d --build --remove-orphans
 ```
 
-Open the server console:
+## Panel Features
 
-```bash
-cd /opt/fabric-minecraft-server
-docker attach forge-minecraft-server
-```
-
-Detach from the console with `Ctrl+P`, then `Ctrl+Q`.
-
-Build the legacy Fabric mod scaffold:
-
-```bash
-cd /opt/fabric-minecraft-server/panel-mod
-./gradlew build
-```
+- Dashboard, players, saves, broadcasts, and settings use the internal Minecraft management API where available.
+- Console log viewing is panel-managed, but raw command execution still uses scoped RCON.
+- Files now exposes scoped navigation, download, upload, rename, delete, and safe inline text editing inside approved data roots only.
+- Mods stages uploads before promotion and parses Fabric, Forge, and NeoForge metadata when available.
+- Audit history lives in `panel-data/audit/audit.log`.
+- Backups live under `/opt/fabric-minecraft-server/backups`.
 
 ## Data Layout
 
-- World, configs, logs, and mods live under `/opt/fabric-minecraft-server/data`.
-- Active mods live under `/opt/fabric-minecraft-server/data/mods`.
-- Staged mod uploads live under `/opt/fabric-minecraft-server/data/mods-staging`.
-- The legacy Fabric mod workspace for older panel-bridge experiments lives under `/opt/fabric-minecraft-server/panel-mod`.
-- Panel runtime data lives under `/opt/fabric-minecraft-server/panel-data`.
-- Quarantined mods live under `/opt/fabric-minecraft-server/panel-data/mod-quarantine`.
-- Backup archives live under `/opt/fabric-minecraft-server/backups`.
-- Host control scripts for the panel live under `/opt/fabric-minecraft-server/scripts`.
-- The host port is `6767/tcp`, forwarded to the container's internal Minecraft port `25565/tcp`.
-- The admin panel is proxied by Caddy on host port `8080/tcp`.
-- The Minecraft management API is reserved on the internal Compose network at port `25585/tcp` and is not published to the LAN.
+- Runtime data lives under `/opt/fabric-minecraft-server/data`.
+- Active mods: `/opt/fabric-minecraft-server/data/mods`
+- Staged mod uploads: `/opt/fabric-minecraft-server/data/mods-staging`
+- NeoForge and server configs: `/opt/fabric-minecraft-server/data/config` and `/opt/fabric-minecraft-server/data/defaultconfigs`
+- World data and server configs: `/opt/fabric-minecraft-server/data/world`
+- Panel runtime data: `/opt/fabric-minecraft-server/panel-data`
+- Quarantined mods: `/opt/fabric-minecraft-server/panel-data/mod-quarantine`
 
-## Notes
+## Validation
 
-- `.env` defaults to `12G` max heap and `2G` initial heap.
-- `EULA=TRUE` is set because Minecraft will not start without accepting the EULA.
-- `TZ` is set to `Etc/UTC`; change it in `.env` if you want local server time.
+Minimum validation after meaningful stack changes:
+
+- `bash -n scripts/server-control.sh`
+- `npm run check` in `panel/`
+- `npm run build` in `panel/`
+- `docker compose config`
+- `docker compose up -d --build --remove-orphans`
+- inspect `docker compose logs -f neoforge`

@@ -26,7 +26,7 @@ type RpcResponse =
       params?: unknown[];
     };
 
-const readManagementSecret = async () => {
+export const readManagementSecret = async () => {
   const raw = await fs.readFile(path.join(config.dataRoot, "server.properties"), "utf8");
   const secretLine = raw
     .split("\n")

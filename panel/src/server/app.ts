@@ -3,6 +3,8 @@ import path from "node:path";
 import { attachAuditLogger, getAuditLog } from "./audit";
 import { createBackup, deleteBackup, getBackupExclusionOptions, inspectBackup, listBackups, restoreBackup, toBackupErrorResponse } from "./backups";
 import { appendConsoleEcho, getRecentLogs, restartServer, runRconCommand, startServer, stopServer } from "./control";
+import { emitSystemPanelEvent, getBridgeState, subscribeToPanelEvents } from "./events";
+import { assertFileRoot, deleteFile, downloadFile, listFiles, readFileContent, renameFile, toFilesErrorResponse, uploadFile, writeTextFile } from "./files";
 import { getDashboard, banPlayer, broadcastMessage, deopPlayer, kickPlayer, listPlayers, opPlayer, pardonPlayer, saveWorld, unwhitelistPlayer, whitelistPlayer } from "./minecraft";
 import { config } from "./config";
 import { deleteMod, installMod, listModsInventory, quarantineMod, rejectUploadedMod, restoreQuarantinedMod, toModErrorResponse, uploadModToStaging } from "./mods";
@@ -132,6 +134,115 @@ export const createApp = () => {
 
   app.get("/api/mods", async (_req: Request, res: Response) => {
     res.json(await listModsInventory());
+  });
+
+  app.get("/api/files", async (req: Request, res: Response) => {
+    try {
+      const root = assertFileRoot(readParam(req.query.root) || "config");
+      res.json(await listFiles(root, readParam(req.query.path)));
+    } catch (error) {
+      const response = toFilesErrorResponse(error);
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.get("/api/files/content", async (req: Request, res: Response) => {
+    try {
+      const root = assertFileRoot(readParam(req.query.root) || "config");
+      res.json(await readFileContent(root, readParam(req.query.path)));
+    } catch (error) {
+      const response = toFilesErrorResponse(error);
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.get("/api/files/download", async (req: Request, res: Response) => {
+    try {
+      const root = assertFileRoot(readParam(req.query.root) || "config");
+      const result = await downloadFile(root, readParam(req.query.path));
+      res.setHeader("Content-Type", result.contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${result.fileName}"`);
+      res.send(result.payload);
+    } catch (error) {
+      const response = toFilesErrorResponse(error);
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.post("/api/files/upload", async (req: Request, res: Response) => {
+    try {
+      const root = assertFileRoot(typeof req.body?.root === "string" ? req.body.root : "config");
+      const file = await uploadFile(
+        root,
+        typeof req.body?.path === "string" ? req.body.path : "",
+        typeof req.body?.fileName === "string" ? req.body.fileName : "",
+        typeof req.body?.contentBase64 === "string" ? req.body.contentBase64 : ""
+      );
+      writeScopedAuditEvent(req, "file-upload", 200, `/api/files/${root}/${file.entry.path}`);
+      res.json({
+        file,
+        listing: await listFiles(root, typeof req.body?.path === "string" ? req.body.path : "")
+      });
+    } catch (error) {
+      const response = toFilesErrorResponse(error);
+      writeScopedAuditEvent(req, "file-upload", response.statusCode, "/api/files/upload");
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.post("/api/files/write", async (req: Request, res: Response) => {
+    try {
+      const root = assertFileRoot(typeof req.body?.root === "string" ? req.body.root : "config");
+      const file = await writeTextFile(
+        root,
+        typeof req.body?.path === "string" ? req.body.path : "",
+        typeof req.body?.content === "string" ? req.body.content : ""
+      );
+      writeScopedAuditEvent(req, "file-write", 200, `/api/files/${root}/${file.entry.path}`);
+      res.json({ file });
+    } catch (error) {
+      const response = toFilesErrorResponse(error);
+      writeScopedAuditEvent(req, "file-write", response.statusCode, "/api/files/write");
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.post("/api/files/rename", async (req: Request, res: Response) => {
+    try {
+      const root = assertFileRoot(typeof req.body?.root === "string" ? req.body.root : "config");
+      const result = await renameFile(
+        root,
+        typeof req.body?.path === "string" ? req.body.path : "",
+        typeof req.body?.nextName === "string" ? req.body.nextName : ""
+      );
+      writeScopedAuditEvent(req, "file-rename", 200, `/api/files/${root}/${result.path}`);
+      res.json({
+        listing: await listFiles(root, path.posix.dirname(result.path) === "." ? "" : path.posix.dirname(result.path)),
+        renamed: result
+      });
+    } catch (error) {
+      const response = toFilesErrorResponse(error);
+      writeScopedAuditEvent(req, "file-rename", response.statusCode, "/api/files/rename");
+      res.status(response.statusCode).json({ error: response.message });
+    }
+  });
+
+  app.delete("/api/files", async (req: Request, res: Response) => {
+    try {
+      const root = assertFileRoot(readParam(req.query.root) || "config");
+      const relativePath = readParam(req.query.path);
+      const parentPath = path.posix.dirname(relativePath) === "." ? "" : path.posix.dirname(relativePath);
+      const deleted = await deleteFile(root, relativePath);
+      writeScopedAuditEvent(req, "file-delete", 200, `/api/files/${root}/${deleted.path}`);
+      res.json({
+        deleted,
+        listing: await listFiles(root, root === "admin" ? "" : parentPath)
+      });
+    } catch (error) {
+      const response = toFilesErrorResponse(error);
+      writeScopedAuditEvent(req, "file-delete", response.statusCode, "/api/files");
+      res.status(response.statusCode).json({ error: response.message });
+    }
   });
 
   app.post("/api/mods/upload", async (req: Request, res: Response) => {
@@ -329,22 +440,27 @@ export const createApp = () => {
   app.post("/api/server/start", async (_req: Request, res: Response) => {
     await startServer();
     await refreshRestartBaseline();
+    emitSystemPanelEvent("dashboard-refresh");
     res.json(await getDashboard());
   });
 
   app.post("/api/server/stop", async (_req: Request, res: Response) => {
     await stopServer();
+    emitSystemPanelEvent("dashboard-refresh");
     res.json(await getDashboard());
   });
 
   app.post("/api/server/restart", async (_req: Request, res: Response) => {
     await restartServer();
     await refreshRestartBaseline();
+    emitSystemPanelEvent("dashboard-refresh");
     res.json(await getDashboard());
   });
 
   app.post("/api/server/save", async (_req: Request, res: Response) => {
     const output = await saveWorld();
+    emitSystemPanelEvent("save-event");
+    emitSystemPanelEvent("dashboard-refresh");
     res.json({
       dashboard: await getDashboard(),
       output
@@ -360,6 +476,7 @@ export const createApp = () => {
     }
 
     const output = await broadcastMessage(message);
+    emitSystemPanelEvent("dashboard-refresh");
     res.json({
       dashboard: await getDashboard(),
       output
@@ -382,9 +499,43 @@ export const createApp = () => {
 
     const output = await runRconCommand(...command.split(" ").filter(Boolean));
     await appendConsoleEcho(command, output);
+    emitSystemPanelEvent("dashboard-refresh");
     res.json({
       logs: (await getRecentLogs(120)).split("\n").filter(Boolean),
       output
+    });
+  });
+
+  app.get("/api/events/state", (_req: Request, res: Response) => {
+    res.json(getBridgeState());
+  });
+
+  app.get("/api/events/stream", (req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    const send = (event: unknown) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+
+    send({
+      details: getBridgeState(),
+      receivedAt: new Date().toISOString(),
+      source: "system",
+      type: "management-bridge-state"
+    });
+
+    const unsubscribe = subscribeToPanelEvents(send);
+    const keepAlive = setInterval(() => {
+      res.write(": keep-alive\n\n");
+    }, 15000);
+
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      unsubscribe();
+      res.end();
     });
   });
 
@@ -395,38 +546,59 @@ export const createApp = () => {
   app.post("/api/players/whitelist", async (req: Request, res: Response) => {
     const name = requireName(req, res);
     if (!name) return;
-    res.json(await whitelistPlayer(name));
+    const players = await whitelistPlayer(name);
+    emitSystemPanelEvent("allowlist-changed", { name });
+    emitSystemPanelEvent("players-refresh");
+    res.json(players);
   });
 
   app.delete("/api/players/whitelist/:name", async (req: Request, res: Response) => {
-    res.json(await unwhitelistPlayer(readParam(req.params.name)));
+    const name = readParam(req.params.name);
+    const players = await unwhitelistPlayer(name);
+    emitSystemPanelEvent("allowlist-changed", { name });
+    emitSystemPanelEvent("players-refresh");
+    res.json(players);
   });
 
   app.post("/api/players/ops", async (req: Request, res: Response) => {
     const name = requireName(req, res);
     if (!name) return;
-    res.json(await opPlayer(name));
+    const players = await opPlayer(name);
+    emitSystemPanelEvent("operators-changed", { name });
+    emitSystemPanelEvent("players-refresh");
+    res.json(players);
   });
 
   app.delete("/api/players/ops/:name", async (req: Request, res: Response) => {
-    res.json(await deopPlayer(readParam(req.params.name)));
+    const name = readParam(req.params.name);
+    const players = await deopPlayer(name);
+    emitSystemPanelEvent("operators-changed", { name });
+    emitSystemPanelEvent("players-refresh");
+    res.json(players);
   });
 
   app.post("/api/players/bans", async (req: Request, res: Response) => {
     const name = requireName(req, res);
     if (!name) return;
-    res.json(await banPlayer(name));
+    const players = await banPlayer(name);
+    emitSystemPanelEvent("players-refresh", { name });
+    res.json(players);
   });
 
   app.delete("/api/players/bans/:name", async (req: Request, res: Response) => {
-    res.json(await pardonPlayer(readParam(req.params.name)));
+    const name = readParam(req.params.name);
+    const players = await pardonPlayer(name);
+    emitSystemPanelEvent("players-refresh", { name });
+    res.json(players);
   });
 
   app.post("/api/players/kick", async (req: Request, res: Response) => {
     const name = requireName(req, res);
     if (!name) return;
     const reason = typeof req.body.reason === "string" ? req.body.reason : undefined;
-    res.json(await kickPlayer(name, reason));
+    const players = await kickPlayer(name, reason);
+    emitSystemPanelEvent("players-refresh", { name });
+    res.json(players);
   });
 
   app.get("*", (_req: Request, res: Response) => {

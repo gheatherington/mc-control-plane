@@ -119,10 +119,10 @@ type BackupsResponse = {
 };
 
 type ModMetadata = {
-  descriptor: "fabric.mod.json" | "META-INF/mods.toml";
+  descriptor: "fabric.mod.json" | "META-INF/mods.toml" | "META-INF/neoforge.mods.toml";
   description?: string;
   id: string;
-  loader: "fabric" | "forge";
+  loader: "fabric" | "forge" | "neoforge";
   name?: string;
   side?: string;
   version?: string;
@@ -157,6 +157,57 @@ type ModsResponse = {
   };
 };
 
+type FileEntry = {
+  editable: boolean;
+  isDirectory: boolean;
+  modifiedAt: string;
+  name: string;
+  path: string;
+  sizeBytes: number;
+};
+
+type FilesResponse = {
+  entries: FileEntry[];
+  path: string;
+  root: "admin" | "config" | "defaultconfigs" | "mods" | "mods-staging" | "world";
+  roots: Array<{
+    key: "admin" | "config" | "defaultconfigs" | "mods" | "mods-staging" | "world";
+    label: string;
+    path: string;
+  }>;
+};
+
+type FileContentResponse = {
+  content?: string;
+  editable: boolean;
+  entry: FileEntry;
+  root: FilesResponse["root"];
+};
+
+type PanelEvent = {
+  details?: Record<string, unknown>;
+  receivedAt: string;
+  source: "poll" | "subscriber" | "system";
+  type:
+    | "allowlist-changed"
+    | "dashboard-refresh"
+    | "management-bridge-state"
+    | "management-notification"
+    | "operators-changed"
+    | "player-join"
+    | "player-leave"
+    | "players-refresh"
+    | "save-event";
+};
+
+type BridgeState = {
+  connected: boolean;
+  fallbackActive: boolean;
+  lastError: string | null;
+  lastNotificationAt: string | null;
+  lastOpenAt: string | null;
+};
+
 const flattenSettings = (groups: SettingsGroup[]) => groups.flatMap((group) => group.settings);
 
 const toDraftValue = (value: SettingValue) => typeof value === "boolean" ? String(value) : String(value);
@@ -188,7 +239,8 @@ const quarantineReasonLabel: Record<NonNullable<QuarantineMetadata["reason"]>, s
 
 const modLoaderLabel: Record<ModMetadata["loader"], string> = {
   fabric: "Fabric",
-  forge: "Forge"
+  forge: "Forge",
+  neoforge: "NeoForge"
 };
 
 const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
@@ -250,6 +302,56 @@ const LogViewer = ({ logs }: { logs: string[] }) => {
   return <pre className="log-block" ref={logRef}>{logs.join("\n")}</pre>;
 };
 
+const useLivePanelEvents = (onEvent: (event: PanelEvent) => void) => {
+  const [bridgeState, setBridgeState] = useState<BridgeState>({
+    connected: false,
+    fallbackActive: true,
+    lastError: null,
+    lastNotificationAt: null,
+    lastOpenAt: null
+  });
+  const onEventRef = useRef(onEvent);
+
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
+
+  useEffect(() => {
+    const source = new EventSource("/api/events/stream");
+
+    source.onopen = () => {
+      setBridgeState((current) => ({
+        ...current,
+        connected: true
+      }));
+    };
+
+    source.onmessage = (event) => {
+      const parsed = JSON.parse(event.data) as PanelEvent;
+
+      if (parsed.type === "management-bridge-state" && parsed.details) {
+        setBridgeState(parsed.details as BridgeState);
+      }
+
+      onEventRef.current(parsed);
+    };
+
+    source.onerror = () => {
+      setBridgeState((current) => ({
+        ...current,
+        connected: false,
+        fallbackActive: true
+      }));
+    };
+
+    return () => {
+      source.close();
+    };
+  }, []);
+
+  return bridgeState;
+};
+
 const DashboardPage = () => {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [broadcast, setBroadcast] = useState("");
@@ -260,6 +362,12 @@ const DashboardPage = () => {
     const data = await response.json();
     setDashboard(data);
   };
+
+  const bridgeState = useLivePanelEvents((event) => {
+    if (["dashboard-refresh", "save-event", "player-join", "player-leave", "allowlist-changed", "operators-changed"].includes(event.type)) {
+      void load();
+    }
+  });
 
   useEffect(() => {
     let active = true;
@@ -272,13 +380,13 @@ const DashboardPage = () => {
     };
 
     void safeLoad();
-    const timer = window.setInterval(() => void load(), 3000);
+    const timer = window.setInterval(() => void load(), bridgeState.connected && !bridgeState.fallbackActive ? 20000 : 3000);
 
     return () => {
       active = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [bridgeState.connected, bridgeState.fallbackActive]);
 
   const runServerAction = async (endpoint: string, body?: Record<string, string>) => {
     setPending(endpoint);
@@ -310,6 +418,9 @@ const DashboardPage = () => {
           <div><span className="metric-label">Players</span><strong>{dashboard.players.online}/{dashboard.server.maxPlayers}</strong></div>
           <div><span className="metric-label">Known Players</span><strong>{dashboard.players.known}</strong></div>
         </div>
+        <p className="body-copy">
+          Live updates: {bridgeState.connected && !bridgeState.fallbackActive ? "Subscriber connected" : "Polling fallback active"}
+        </p>
         <p className="body-copy">MOTD: {dashboard.server.motd}</p>
         <div className="action-grid">
           <button className="primary-button" disabled={!!pending} onClick={() => void runServerAction("/api/server/start")} type="button">Start</button>
@@ -356,9 +467,18 @@ const PlayersPage = () => {
     setPlayersState(data);
   };
 
+  const bridgeState = useLivePanelEvents((event) => {
+    if (["players-refresh", "player-join", "player-leave", "allowlist-changed", "operators-changed"].includes(event.type)) {
+      void loadPlayers();
+    }
+  });
+
   useEffect(() => {
     void loadPlayers();
-  }, []);
+    const timer = window.setInterval(() => void loadPlayers(), bridgeState.connected && !bridgeState.fallbackActive ? 20000 : 5000);
+
+    return () => window.clearInterval(timer);
+  }, [bridgeState.connected, bridgeState.fallbackActive]);
 
   const submit = async (endpoint: string, options: RequestInit = {}) => {
     setFormReminder("");
@@ -394,6 +514,7 @@ const PlayersPage = () => {
         <p className="eyebrow">Player Management</p>
         <h1>Directory</h1>
         <p className="body-copy">Use exact Minecraft usernames for operator, whitelist, ban, and kick actions.</p>
+        <p className="body-copy">Live updates: {bridgeState.connected && !bridgeState.fallbackActive ? "Subscriber connected" : "Polling fallback active"}</p>
         {formReminder ? <p className="notice-text">{formReminder}</p> : null}
         <div className="player-form">
           <input
@@ -499,7 +620,7 @@ const ConsolePage = () => {
     <section className="dashboard-grid">
       <article className="panel-card">
         <p className="eyebrow">Command Line</p>
-        <h1>RCON Console</h1>
+        <h1>Scoped Raw Console</h1>
         <div className="player-form">
           <input onChange={(event) => setCommand(event.target.value)} placeholder="Enter a Minecraft command without leading slash" value={command} />
         </div>
@@ -507,12 +628,342 @@ const ConsolePage = () => {
           <button className={pending ? "primary-button is-loading" : "primary-button"} disabled={!command || pending} onClick={() => void runCommand()} type="button">Run Command</button>
           <button className="secondary-button" disabled={pending} onClick={() => void loadConsole()} type="button">Refresh Logs</button>
         </div>
+        <p className="body-copy">Raw command execution still uses the scoped RCON fallback because the management API does not expose a safe equivalent for arbitrary console commands.</p>
         <p className="body-copy">Latest command output: {output || "No command run yet."}</p>
       </article>
       <article className="panel-card logs-card">
         <p className="eyebrow">Console</p>
         <h1>Recent Server Logs</h1>
         <LogViewer logs={logs} />
+      </article>
+    </section>
+  );
+};
+
+const FilesPage = () => {
+  const [filesState, setFilesState] = useState<FilesResponse | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<FileEntry | null>(null);
+  const [selectedContent, setSelectedContent] = useState<FileContentResponse | null>(null);
+  const [draftContent, setDraftContent] = useState("");
+  const [renameValue, setRenameValue] = useState("");
+  const [uploadFileState, setUploadFileState] = useState<File | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const loadFiles = async (root = filesState?.root || "config", nextPath = filesState?.path || "") => {
+    const params = new URLSearchParams({
+      root,
+      path: nextPath
+    });
+    const response = await fetch(`/api/files?${params.toString()}`);
+    const data = await response.json() as FilesResponse;
+    setFilesState(data);
+    setSelectedEntry(null);
+    setSelectedContent(null);
+    setDraftContent("");
+    setRenameValue("");
+  };
+
+  useEffect(() => {
+    void loadFiles("config", "");
+  }, []);
+
+  const openEntry = async (entry: FileEntry) => {
+    if (!filesState) {
+      return;
+    }
+
+    setError("");
+    setMessage("");
+
+    if (entry.isDirectory) {
+      await loadFiles(filesState.root, entry.path);
+      return;
+    }
+
+    const params = new URLSearchParams({
+      root: filesState.root,
+      path: entry.path
+    });
+    const response = await fetch(`/api/files/content?${params.toString()}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      setError(data.error || "Failed to load file");
+      return;
+    }
+
+    setSelectedEntry(entry);
+    setSelectedContent(data as FileContentResponse);
+    setDraftContent(typeof data.content === "string" ? data.content : "");
+    setRenameValue(entry.name);
+  };
+
+  const goUp = async () => {
+    if (!filesState || !filesState.path) {
+      return;
+    }
+
+    const parts = filesState.path.split("/").filter(Boolean);
+    parts.pop();
+    await loadFiles(filesState.root, parts.join("/"));
+  };
+
+  const saveFile = async () => {
+    if (!filesState || !selectedEntry || !selectedContent?.editable) {
+      return;
+    }
+
+    setPendingAction("save");
+    setError("");
+    setMessage("");
+
+    const response = await fetch("/api/files/write", {
+      body: JSON.stringify({
+        content: draftContent,
+        path: selectedEntry.path,
+        root: filesState.root
+      }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+    const data = await response.json();
+    setPendingAction(null);
+
+    if (!response.ok) {
+      setError(data.error || "Failed to save file");
+      return;
+    }
+
+    setSelectedContent(data.file as FileContentResponse);
+    setMessage(`Saved ${selectedEntry.name}.`);
+    await loadFiles(filesState.root, filesState.path);
+  };
+
+  const renameSelected = async () => {
+    if (!filesState || !selectedEntry || !renameValue.trim() || renameValue.trim() === selectedEntry.name) {
+      return;
+    }
+
+    setPendingAction("rename");
+    setError("");
+    setMessage("");
+
+    const response = await fetch("/api/files/rename", {
+      body: JSON.stringify({
+        nextName: renameValue,
+        path: selectedEntry.path,
+        root: filesState.root
+      }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+    const data = await response.json();
+    setPendingAction(null);
+
+    if (!response.ok) {
+      setError(data.error || "Failed to rename path");
+      return;
+    }
+
+    setMessage(`Renamed to ${renameValue}.`);
+    setFilesState(data.listing as FilesResponse);
+    setSelectedEntry(null);
+    setSelectedContent(null);
+    setDraftContent("");
+    setRenameValue("");
+  };
+
+  const deleteSelected = async () => {
+    if (!filesState || !selectedEntry) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${selectedEntry.name}? This cannot be undone from the panel.`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPendingAction("delete");
+    setError("");
+    setMessage("");
+
+    const params = new URLSearchParams({
+      root: filesState.root,
+      path: selectedEntry.path
+    });
+    const response = await fetch(`/api/files?${params.toString()}`, {
+      method: "DELETE"
+    });
+    const data = await response.json();
+    setPendingAction(null);
+
+    if (!response.ok) {
+      setError(data.error || "Failed to delete path");
+      return;
+    }
+
+    setFilesState(data.listing as FilesResponse);
+    setSelectedEntry(null);
+    setSelectedContent(null);
+    setDraftContent("");
+    setRenameValue("");
+    setMessage(`Deleted ${selectedEntry.name}.`);
+  };
+
+  const uploadSelectedFile = async () => {
+    if (!filesState || !uploadFileState) {
+      return;
+    }
+
+    setPendingAction("upload");
+    setError("");
+    setMessage("");
+
+    try {
+      const contentBase64 = arrayBufferToBase64(await uploadFileState.arrayBuffer());
+      const response = await fetch("/api/files/upload", {
+        body: JSON.stringify({
+          contentBase64,
+          fileName: uploadFileState.name,
+          path: filesState.root === "admin" ? "" : filesState.path,
+          root: filesState.root
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const data = await response.json();
+      setPendingAction(null);
+
+      if (!response.ok) {
+        setError(data.error || "Upload failed");
+        return;
+      }
+
+      setFilesState(data.listing as FilesResponse);
+      setUploadFileState(null);
+      setMessage(`Uploaded ${uploadFileState.name}.`);
+    } catch (uploadError) {
+      setPendingAction(null);
+      setError(uploadError instanceof Error ? uploadError.message : "Upload failed");
+    }
+  };
+
+  if (!filesState) {
+    return <Page description="Loading scoped file roots and directory contents..." title="Files" />;
+  }
+
+  const breadcrumbs = filesState.path ? filesState.path.split("/").filter(Boolean) : [];
+
+  return (
+    <section className="dashboard-grid settings-page">
+      <article className="panel-card logs-card settings-summary-card">
+        <p className="eyebrow">Scoped Files</p>
+        <h1>Minecraft Data Manager</h1>
+        <p className="body-copy">Access is limited to approved data roots for NeoForge configs, world files, server admin files, and mod directories. Hidden paths, symlink escapes, and path traversal are blocked.</p>
+        {message ? <p className="success-text">{message}</p> : null}
+        {error ? <p className="error-text">{error}</p> : null}
+        <div className="file-root-tabs">
+          {filesState.roots.map((root) => (
+            <button
+              className={root.key === filesState.root ? "nav-link active" : "nav-link"}
+              key={root.key}
+              onClick={() => void loadFiles(root.key, "")}
+              type="button"
+            >
+              {root.label}
+            </button>
+          ))}
+        </div>
+        <div className="file-breadcrumbs">
+          <button className="secondary-button" disabled={!filesState.path || pendingAction !== null} onClick={() => void goUp()} type="button">Up One Level</button>
+          <span>{filesState.root}{breadcrumbs.length > 0 ? ` / ${breadcrumbs.join(" / ")}` : ""}</span>
+        </div>
+        <div className="player-form">
+          <input onChange={(event) => setUploadFileState(event.target.files?.[0] || null)} type="file" />
+        </div>
+        <div className="action-grid">
+          <button className={pendingAction === "upload" ? "primary-button is-loading" : "primary-button"} disabled={!uploadFileState || pendingAction !== null} onClick={() => void uploadSelectedFile()} type="button">Upload Here</button>
+          <button className="secondary-button" disabled={pendingAction !== null} onClick={() => void loadFiles(filesState.root, filesState.path)} type="button">Refresh Listing</button>
+        </div>
+      </article>
+      <article className="panel-card">
+        <p className="eyebrow">Listing</p>
+        <h1>{filesState.entries.length}</h1>
+        <div className="file-list">
+          {filesState.entries.map((entry) => (
+            <button
+              className={selectedEntry?.path === entry.path ? "file-row active" : "file-row"}
+              key={entry.path}
+              onClick={() => void openEntry(entry)}
+              type="button"
+            >
+              <div>
+                <strong>{entry.name}</strong>
+                <span className="file-row-meta">{entry.isDirectory ? "Directory" : formatBytes(entry.sizeBytes)}</span>
+              </div>
+              <span className="body-copy">{new Date(entry.modifiedAt).toLocaleString()}</span>
+            </button>
+          ))}
+          {filesState.entries.length === 0 ? <p className="body-copy">This directory is empty.</p> : null}
+        </div>
+      </article>
+      <article className="panel-card logs-card">
+        <p className="eyebrow">Details</p>
+        <h1>{selectedEntry ? selectedEntry.name : "Choose A File"}</h1>
+        {!selectedEntry ? (
+          <p className="body-copy">Select a file to inspect or edit it. Directories open in place.</p>
+        ) : (
+          <>
+            <div className="metric-grid">
+              <div><span className="metric-label">Path</span><strong>{selectedEntry.path}</strong></div>
+              <div><span className="metric-label">Type</span><strong>{selectedEntry.isDirectory ? "Directory" : "File"}</strong></div>
+              <div><span className="metric-label">Size</span><strong>{selectedEntry.isDirectory ? "-" : formatBytes(selectedEntry.sizeBytes)}</strong></div>
+              <div><span className="metric-label">Modified</span><strong>{new Date(selectedEntry.modifiedAt).toLocaleString()}</strong></div>
+            </div>
+            {!selectedEntry.isDirectory ? (
+              <div className="action-grid">
+                <button className="secondary-button" onClick={() => {
+                  const params = new URLSearchParams({
+                    path: selectedEntry.path,
+                    root: filesState.root
+                  });
+                  window.location.href = `/api/files/download?${params.toString()}`;
+                }} type="button">Download</button>
+                <button className="secondary-button" disabled={pendingAction !== null || filesState.root === "admin"} onClick={() => void renameSelected()} type="button">Rename</button>
+                <button className="secondary-button" disabled={pendingAction !== null} onClick={() => void deleteSelected()} type="button">Delete</button>
+              </div>
+            ) : (
+              <div className="action-grid">
+                <button className="secondary-button" disabled={pendingAction !== null || filesState.root === "admin"} onClick={() => void renameSelected()} type="button">Rename Directory</button>
+                <button className="secondary-button" disabled={pendingAction !== null} onClick={() => void deleteSelected()} type="button">Delete Directory</button>
+              </div>
+            )}
+            {filesState.root !== "admin" ? (
+              <div className="player-form">
+                <input onChange={(event) => setRenameValue(event.target.value)} placeholder="Rename selection" value={renameValue} />
+              </div>
+            ) : null}
+            {!selectedEntry.isDirectory && selectedContent?.editable ? (
+              <>
+                <textarea className="file-editor" onChange={(event) => setDraftContent(event.target.value)} value={draftContent} />
+                <div className="action-grid">
+                  <button className={pendingAction === "save" ? "primary-button is-loading" : "primary-button"} disabled={pendingAction !== null} onClick={() => void saveFile()} type="button">Save File</button>
+                </div>
+              </>
+            ) : !selectedEntry.isDirectory ? (
+              <p className="body-copy">This file is treated as download-only. Inline editing is limited to `.json`, `.properties`, `.toml`, `.txt`, `.yml`, and `.yaml` files within approved roots.</p>
+            ) : null}
+          </>
+        )}
       </article>
     </section>
   );
@@ -1270,8 +1721,8 @@ const ModsPage = () => {
     <section className="dashboard-grid settings-page">
       <article className="panel-card logs-card settings-summary-card">
         <p className="eyebrow">Mod Inventory</p>
-        <h1>Scoped Mod Jars</h1>
-        <p className="body-copy">Uploads land in staging first. From there you can install a jar into the active mod set, quarantine it, or delete it. Removing an active mod also moves it into quarantine so rollback stays available.</p>
+        <h1>Forge And NeoForge Server Jars</h1>
+        <p className="body-copy">Uploads land in staging first. From there you can install a jar into the active server mod set, quarantine it, or delete it. Removing an active mod also moves it into quarantine so rollback stays available.</p>
         <div className="metric-grid">
           <div><span className="metric-label">Active</span><strong>{modsState.mods.active.length}</strong></div>
           <div><span className="metric-label">Staged</span><strong>{modsState.mods.staging.length}</strong></div>
@@ -1292,7 +1743,7 @@ const ModsPage = () => {
       <article className="panel-card">
         <p className="eyebrow">Upload</p>
         <h1>Stage A Mod</h1>
-        <p className="body-copy">Select a `.jar` file to upload into the staging area. The backend accepts up to 32 MB per upload and keeps active mods untouched until you explicitly install the staged jar.</p>
+        <p className="body-copy">Select a Forge or NeoForge server `.jar` file to upload into the staging area. The backend accepts up to 32 MB per upload and keeps active mods untouched until you explicitly install the staged jar.</p>
         <div className="player-form">
           <input accept=".jar,application/java-archive" onChange={(event) => setSelectedFile(event.target.files?.[0] || null)} type="file" />
         </div>
@@ -1317,7 +1768,7 @@ const pages = [
   { path: "/", label: "Dashboard", element: <DashboardPage /> },
   { path: "/console", label: "Console", element: <ConsolePage /> },
   { path: "/players", label: "Players", element: <PlayersPage /> },
-  { path: "/files", label: "Files", element: <Page title="Files" description="Scoped file management will operate only inside the mounted Minecraft data directory." /> },
+  { path: "/files", label: "Files", element: <FilesPage /> },
   { path: "/mods", label: "Mods", element: <ModsPage /> },
   { path: "/backups", label: "Backups", element: <BackupsPage /> },
   { path: "/settings", label: "Settings", element: <SettingsPage /> },
@@ -1328,9 +1779,9 @@ export const App = () => (
   <div className="shell">
     <aside className="sidebar">
       <div>
-        <p className="eyebrow">Forge Panel</p>
+        <p className="eyebrow">Modded MC</p>
         <h1>Single-Admin Control Plane</h1>
-        <p className="body-copy">This panel is private to the LAN and exposes direct controls for the live Forge 1.21.11 server.</p>
+        <p className="body-copy">This panel is private to the LAN and exposes direct controls for the live NeoForge 1.21.11 server while keeping operator-facing branding generic.</p>
       </div>
       <nav className="nav">
         {pages.map((page) => (
