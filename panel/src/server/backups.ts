@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 const tarCommand = "tar";
 const rootName = path.basename(config.dataRoot);
 const dataParentRoot = path.dirname(config.dataRoot);
+const restoreWorkspaceRoot = path.join(config.panelDataRoot, "backup-restore");
 
 const backupExclusionOptions = [
   {
@@ -65,6 +66,10 @@ export type BackupDetails = BackupSummary & {
 
 const ensureBackupsRoot = async () => {
   await fs.mkdir(config.backupsRoot, { recursive: true });
+};
+
+const ensureRestoreWorkspaceRoot = async () => {
+  await fs.mkdir(restoreWorkspaceRoot, { recursive: true });
 };
 
 const sanitizeBackupLabel = (value: string | undefined) => {
@@ -238,15 +243,16 @@ export const restoreBackup = async (name: string, confirmation: string) => {
 
   const backupPath = await resolveBackupPath(name);
   const timestamp = Date.now();
-  const extractRoot = path.join(dataParentRoot, `.restore-${rootName}-${timestamp}`);
-  const previousRoot = path.join(dataParentRoot, `.${rootName}-before-restore-${timestamp}`);
+  const extractRoot = path.join(restoreWorkspaceRoot, `extract-${rootName}-${timestamp}`);
+  const previousRoot = path.join(restoreWorkspaceRoot, `previous-${rootName}-${timestamp}`);
   const extractedDataRoot = path.join(extractRoot, rootName);
   const containerState = await getContainerState();
   const restartAfterRestore = containerState.Running;
-  let currentDataMoved = false;
-  let restored = false;
   let previousDataRetained = false;
+  let previousCopyCreated = false;
+  let restored = false;
 
+  await ensureRestoreWorkspaceRoot();
   await fs.mkdir(extractRoot, { recursive: true });
 
   try {
@@ -264,17 +270,21 @@ export const restoreBackup = async (name: string, confirmation: string) => {
       throw new BackupError(`backup '${name}' does not contain '${rootName}/' at its top level`, 422);
     }
 
-    await fs.rename(config.dataRoot, previousRoot);
-    currentDataMoved = true;
-    await fs.rename(extractedDataRoot, config.dataRoot);
+    await fs.cp(config.dataRoot, previousRoot, { recursive: true });
+    previousCopyCreated = true;
+    await fs.rm(config.dataRoot, { force: true, recursive: true });
+    await fs.mkdir(config.dataRoot, { recursive: true });
+    await fs.cp(extractedDataRoot, config.dataRoot, { recursive: true });
     restored = true;
 
     await fs.rm(previousRoot, { force: true, recursive: true }).catch(() => {
       previousDataRetained = true;
     });
   } catch (error) {
-    if (currentDataMoved && !restored) {
-      await fs.rename(previousRoot, config.dataRoot).catch(() => undefined);
+    if (previousCopyCreated && !restored) {
+      await fs.rm(config.dataRoot, { force: true, recursive: true }).catch(() => undefined);
+      await fs.mkdir(config.dataRoot, { recursive: true }).catch(() => undefined);
+      await fs.cp(previousRoot, config.dataRoot, { recursive: true }).catch(() => undefined);
     }
 
     throw error;
