@@ -6,7 +6,7 @@
 - The panel and Caddy stack are live on host port `8080`.
 - Minecraft's management server is enabled internally on `25585/tcp`.
 - The visible panel branding is generic `Modded MC`, while the runtime and service naming are NeoForge-first.
-- `NEOFORGE_VERSION` is required for runtime changes. The current live stack uses `beta` because the image helper rejects exact `21.11.x-beta` tags.
+- `NEOFORGE_VERSION` is required for runtime changes. The current live stack is pinned to `21.1.220` for Minecraft `1.21.1`.
 - Phase 12 is complete: the panel now has a real `Settings` page with structured read/update APIs, runtime-safe management RPC writes, and guarded restart-required file edits where needed.
 - Phase 16 is complete: the panel now has a scoped Files page with approved roots, safe inline editing, and audited write flows.
 - Phase 16 refinements are complete: the Files route now supports both common-root shortcuts and a full mounted data-tree view, with a side-by-side listing/editor workspace, search, file-type badges, and path history controls.
@@ -303,7 +303,7 @@ Validation:
 Completed:
 
 - Updated `plan.md` and operator docs so the roadmap and runtime guidance are NeoForge-first.
-- Changed Compose runtime wiring from Forge to NeoForge and set `NEOFORGE_VERSION=beta` because the current image helper rejects exact `21.11.x-beta` tags.
+- Changed Compose runtime wiring from Forge to NeoForge and pinned `NEOFORGE_VERSION=21.1.220`.
 - Renamed the live service and container defaults to `neoforge-*`.
 - Changed visible panel branding to generic `Modded MC` while keeping the Mods route explicitly about Forge/NeoForge server jars.
 - Extended mod metadata parsing so NeoForge descriptors are a first-class loader type.

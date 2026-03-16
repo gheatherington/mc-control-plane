@@ -12,16 +12,19 @@ This live directory is the canonical home for the NeoForge Minecraft server. Kee
 
 Runtime server data lives in `/opt/fabric-minecraft-server/data`. That includes worlds, logs, configs, whitelist data, and future mods.
 
+Important: `panel-mod/` is no longer part of the active server or panel architecture. The live admin panel now integrates through Minecraft's built-in JSON-RPC management API on `25585`, so ongoing runtime and control-plane work should target the server stack and `panel/` only unless an older experiment needs to be referenced.
+
 ## Current Server State
 This server was built with the following fixed decisions:
 
-- Minecraft `1.21.11`, not `latest`.
+- Minecraft `1.21.1`, not `latest`.
 - NeoForge-first runtime; shared gameplay mods must match on both client and server.
 - Live path: `/opt/fabric-minecraft-server`.
 - Memory target: `12G` max heap, `2G` initial heap.
 - Host game port: `6767/tcp`, forwarded to container `25565/tcp`.
 - Admin panel port: `8080/tcp` through Caddy.
 - Internal Minecraft management API: `25585/tcp` on the Compose network only.
+- Control plane integration path: Minecraft's built-in JSON-RPC management API on `25585`; `panel-mod/` is not used by the live stack.
 - Owner: `brayden:brayden` for the stack directory and data directory.
 - Container UID/GID mapping: `1000:1000`.
 - Current running services: `neoforge`, `panel`, and `caddy`.
@@ -56,7 +59,7 @@ There is no formal test suite. Minimum validation:
 - confirm files are still written under `data/` with `brayden` ownership.
 
 ## Commit & Pull Request Guidelines
-Git history is now available in this environment, so use short imperative commits such as `Pin Minecraft to 1.21.11` or `Add whitelist defaults`. PRs should state operational impact, validation performed, and any required operator actions such as restarting the container or adding mods.
+Git history is now available in this environment, so use short imperative commits such as `Pin Minecraft to 1.21.1` or `Add whitelist defaults`. PRs should state operational impact, validation performed, and any required operator actions such as restarting the container or adding mods.
 
 Always update the git repo whenever a phase is completed or when a meaningful stack, panel, or mod change has been made. Do not leave completed work untracked.
 
@@ -77,8 +80,9 @@ Do not expose secrets or back up `data/` carelessly. Keep the Minecraft version 
 - Phase 13 is complete: the panel now exposes the on-disk audit trail through `/api/audit` and a live Audit page with paging, filtering, summary counts, and size guardrails for `panel-data/audit/audit.log`.
 - Phase 14 is complete: the panel now exposes scoped backup APIs and a live Backups page for archive create/list/inspect/delete flows, exclusion-aware backup creation, explicit world-data coverage for mounted saves, confirmation-gated restore requests, and explicit backup audit events under `/opt/fabric-minecraft-server/backups`.
 - Phase 15 is complete: the panel now exposes scoped mod-management APIs and a live Mods page for staged jar uploads, active install promotion, quarantine/remove flows, rollback restores, loader metadata inventory for Fabric, Forge, and NeoForge jars, and explicit mod audit events across `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine`.
-- The host-local Java 21 and Gradle toolchain remains installed under `/home/brayden/.local/opt`, and `panel-mod/` remains available as a legacy Fabric mod workspace if older bridge experiments need to be referenced.
-- NeoForge migration is complete: the runtime now uses `TYPE=NEOFORGE`, `NEOFORGE_VERSION=beta` because the current image helper rejects exact `21.11.x-beta` tags, and the live service names are `neoforge-minecraft-server`, `neoforge-minecraft-panel`, and `neoforge-minecraft-panel-caddy`.
+- The host-local Java 21 and Gradle toolchain remains installed under `/home/brayden/.local/opt`, but `panel-mod/` is now historical reference material only and is not used by the live server or panel.
+- NeoForge migration is complete: the runtime now uses `TYPE=NEOFORGE`, `NEOFORGE_VERSION=21.1.220`, and the live service names are `neoforge-minecraft-server`, `neoforge-minecraft-panel`, and `neoforge-minecraft-panel-caddy`.
+- The old bridge-mod approach is superseded: the live panel uses the internal management API for dashboard state, player management, saves, broadcasts, settings, and realtime refreshes, with RCON kept only for raw console commands.
 - Phase 16 is complete: the panel now exposes scoped file-management APIs and a live Files page for approved data roots, traversal-resistant navigation, download/upload flows, guarded rename/delete actions, safe inline editing for small text configs, and explicit file audit events.
 - Phase 16 refinements are complete: the Files route now supports both common-root shortcuts and a full mounted server-tree view, uses a horizontal listing/editor workspace in both modes, exposes current-path plus back/forward/up navigation, supports folder search, shows file-type badges, and includes layout fixes for long file names and detail-panel spacing.
 - Phase 17 is complete: the panel now keeps a persistent management API subscriber, pushes dashboard and player refreshes over SSE to the frontend, keeps a polling fallback when subscription coverage is unavailable or incomplete, and keeps RCON narrowed to raw console commands only.

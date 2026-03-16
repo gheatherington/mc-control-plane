@@ -1929,7 +1929,7 @@ export const App = () => (
       <div>
         <p className="eyebrow">Modded MC</p>
         <h1>Single-Admin Control Plane</h1>
-        <p className="body-copy">This panel is private to the LAN and exposes direct controls for the live NeoForge 1.21.11 server while keeping operator-facing branding generic.</p>
+        <p className="body-copy">This panel is private to the LAN and exposes direct controls for the live NeoForge 1.21.1 server while keeping operator-facing branding generic.</p>
       </div>
       <nav className="nav">
         {pages.map((page) => (

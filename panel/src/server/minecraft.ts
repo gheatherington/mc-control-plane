@@ -203,7 +203,7 @@ export const getDashboard = async () => {
       port: 6767,
       status: state.Status,
       healthy: state.Health?.Status || "unknown",
-      version: settings?.version || "1.21.11",
+      version: settings?.version || "1.21.1",
       whitelistEnabled: settings?.whitelistEnabled ?? (properties["white-list"] === "true")
     }
   };

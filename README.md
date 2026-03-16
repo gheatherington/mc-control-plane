@@ -1,6 +1,6 @@
 # NeoForge Minecraft Server
 
-This stack runs a NeoForge Minecraft server in Docker using `itzg/minecraft-server:java21`, pinned to Minecraft `1.21.11` and configured for the NeoForge `beta` channel because the current image helper rejects exact `21.11.x-beta` tags.
+This stack runs a NeoForge Minecraft server in Docker using `itzg/minecraft-server:java21`, pinned to Minecraft `1.21.1` with NeoForge `21.1.220`.
 
 ## Runtime
 
@@ -21,7 +21,7 @@ Shared gameplay modpacks must match between client and server. The panel brandin
 - `plan.md`: Main implementation roadmap and completed phase log.
 - `migration_plan.md`: NeoForge migration handoff and remaining-phase checklist.
 - `panel/`: Panel backend and frontend.
-- `panel-mod/`: Legacy Fabric bridge workspace kept only for historical reference.
+- `panel-mod/`: Legacy Fabric bridge workspace kept only for historical reference and not used by the live stack.
 - `scripts/server-control.sh`: Scoped Docker and RCON wrapper.
 
 ## Start
