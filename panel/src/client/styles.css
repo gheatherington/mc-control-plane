@@ -414,6 +414,25 @@ a {
   gap: 0.85rem;
 }
 
+.file-list-scroll {
+  max-height: 52rem;
+  overflow: auto;
+  padding-right: 0.35rem;
+}
+
+.files-workspace {
+  align-items: start;
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(22rem, 30rem) minmax(0, 1fr);
+  width: 100%;
+}
+
+.files-tree-panel,
+.files-editor-panel {
+  min-width: 0;
+}
+
 .file-row {
   align-items: center;
   background: rgba(255, 255, 255, 0.04);
@@ -430,6 +449,13 @@ a {
   transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
 }
 
+.file-row-main {
+  align-items: center;
+  display: flex;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
 .file-row:hover,
 .file-row:focus-visible,
 .file-row.active {
@@ -443,6 +469,31 @@ a {
   display: block;
   font-size: 0.88rem;
   margin-top: 0.35rem;
+}
+
+.file-badge {
+  align-items: center;
+  border-radius: 0.7rem;
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 700;
+  justify-content: center;
+  letter-spacing: 0.08em;
+  min-width: 3.3rem;
+  padding: 0.45rem 0.55rem;
+  text-transform: uppercase;
+}
+
+.file-badge.directory {
+  background: rgba(118, 227, 165, 0.14);
+  border: 1px solid rgba(118, 227, 165, 0.3);
+  color: #caffdc;
+}
+
+.file-badge.file {
+  background: rgba(255, 179, 138, 0.12);
+  border: 1px solid rgba(255, 179, 138, 0.24);
+  color: #fff3eb;
 }
 
 .file-editor {
@@ -736,6 +787,10 @@ h1 {
 
   .settings-masonry {
     column-count: 1;
+  }
+
+  .files-workspace {
+    grid-template-columns: 1fr;
   }
 
   .audit-table-header {

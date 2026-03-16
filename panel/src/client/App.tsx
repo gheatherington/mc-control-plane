@@ -225,6 +225,15 @@ const formatBytes = (value: number) => {
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 };
 
+const fileTypeBadge = (entry: FileEntry) => {
+  if (entry.isDirectory) {
+    return "DIR";
+  }
+
+  const extension = entry.name.includes(".") ? entry.name.split(".").pop()?.toUpperCase() || "FILE" : "FILE";
+  return extension.length > 4 ? extension.slice(0, 4) : extension;
+};
+
 const modScopeLabel: Record<ModRecord["scope"], string> = {
   active: "Active Mods",
   quarantine: "Quarantined Mods",
@@ -646,6 +655,7 @@ const FilesPage = () => {
   const [selectedContent, setSelectedContent] = useState<FileContentResponse | null>(null);
   const [draftContent, setDraftContent] = useState("");
   const [renameValue, setRenameValue] = useState("");
+  const [searchValue, setSearchValue] = useState("");
   const [uploadFileState, setUploadFileState] = useState<File | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -663,6 +673,7 @@ const FilesPage = () => {
     setSelectedContent(null);
     setDraftContent("");
     setRenameValue("");
+    setSearchValue("");
   };
 
   useEffect(() => {
@@ -866,6 +877,9 @@ const FilesPage = () => {
   const allFilesRoot = filesState.roots.find((root) => root.key === "all");
   const inAllFilesView = filesState.root === "all";
   const rootLabel = filesState.roots.find((root) => root.key === filesState.root)?.label || filesState.root;
+  const visibleEntries = inAllFilesView && searchValue.trim()
+    ? filesState.entries.filter((entry) => entry.name.toLowerCase().includes(searchValue.trim().toLowerCase()) || entry.path.toLowerCase().includes(searchValue.trim().toLowerCase()))
+    : filesState.entries;
 
   return (
     <section className="dashboard-grid settings-page">
@@ -911,6 +925,15 @@ const FilesPage = () => {
           <button className="secondary-button" disabled={!filesState.path || pendingAction !== null} onClick={() => void goUp()} type="button">Up One Level</button>
           <span>{rootLabel}{breadcrumbs.length > 0 ? ` / ${breadcrumbs.join(" / ")}` : ""}</span>
         </div>
+        {inAllFilesView ? (
+          <div className="player-form">
+            <input
+              onChange={(event) => setSearchValue(event.target.value)}
+              placeholder="Search current folder by file name or path"
+              value={searchValue}
+            />
+          </div>
+        ) : null}
         <div className="player-form">
           <input onChange={(event) => setUploadFileState(event.target.files?.[0] || null)} type="file" />
         </div>
@@ -919,28 +942,32 @@ const FilesPage = () => {
           <button className="secondary-button" disabled={pendingAction !== null} onClick={() => void loadFiles(filesState.root, filesState.path)} type="button">Refresh Listing</button>
         </div>
       </article>
-      <article className="panel-card">
-        <p className="eyebrow">Listing</p>
-        <h1>{filesState.entries.length}</h1>
-        <div className="file-list">
-          {filesState.entries.map((entry) => (
-            <button
-              className={selectedEntry?.path === entry.path ? "file-row active" : "file-row"}
-              key={entry.path}
-              onClick={() => void openEntry(entry)}
-              type="button"
-            >
-              <div>
-                <strong>{entry.name}</strong>
-                <span className="file-row-meta">{entry.isDirectory ? "Directory" : formatBytes(entry.sizeBytes)}</span>
-              </div>
-              <span className="body-copy">{new Date(entry.modifiedAt).toLocaleString()}</span>
-            </button>
-          ))}
-          {filesState.entries.length === 0 ? <p className="body-copy">This directory is empty.</p> : null}
-        </div>
-      </article>
-      <article className="panel-card logs-card">
+      <div className={inAllFilesView ? "files-workspace" : "dashboard-grid"}>
+        <article className={`panel-card ${inAllFilesView ? "files-tree-panel" : ""}`}>
+          <p className="eyebrow">Listing</p>
+          <h1>{visibleEntries.length}</h1>
+          <div className={`file-list ${inAllFilesView ? "file-list-scroll" : ""}`}>
+            {visibleEntries.map((entry) => (
+              <button
+                className={selectedEntry?.path === entry.path ? "file-row active" : "file-row"}
+                key={entry.path}
+                onClick={() => void openEntry(entry)}
+                type="button"
+              >
+                <div className="file-row-main">
+                  <span className={`file-badge ${entry.isDirectory ? "directory" : "file"}`}>{fileTypeBadge(entry)}</span>
+                  <div>
+                    <strong>{entry.name}</strong>
+                    <span className="file-row-meta">{entry.isDirectory ? "Directory" : formatBytes(entry.sizeBytes)}</span>
+                  </div>
+                </div>
+                <span className="body-copy">{new Date(entry.modifiedAt).toLocaleString()}</span>
+              </button>
+            ))}
+            {visibleEntries.length === 0 ? <p className="body-copy">{searchValue ? "No files in this folder match the current search." : "This directory is empty."}</p> : null}
+          </div>
+        </article>
+        <article className={`panel-card logs-card ${inAllFilesView ? "files-editor-panel" : ""}`}>
         <p className="eyebrow">Details</p>
         <h1>{selectedEntry ? selectedEntry.name : "Choose A File"}</h1>
         {!selectedEntry ? (
@@ -988,7 +1015,8 @@ const FilesPage = () => {
             ) : null}
           </>
         )}
-      </article>
+        </article>
+      </div>
     </section>
   );
 };
