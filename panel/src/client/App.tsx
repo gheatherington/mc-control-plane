@@ -169,9 +169,9 @@ type FileEntry = {
 type FilesResponse = {
   entries: FileEntry[];
   path: string;
-  root: "admin" | "config" | "defaultconfigs" | "mods" | "mods-staging" | "world";
+  root: "admin" | "all" | "config" | "defaultconfigs" | "mods" | "mods-staging" | "world";
   roots: Array<{
-    key: "admin" | "config" | "defaultconfigs" | "mods" | "mods-staging" | "world";
+    key: "admin" | "all" | "config" | "defaultconfigs" | "mods" | "mods-staging" | "world";
     label: string;
     path: string;
   }>;
@@ -862,30 +862,54 @@ const FilesPage = () => {
   }
 
   const breadcrumbs = filesState.path ? filesState.path.split("/").filter(Boolean) : [];
+  const commonRoots = filesState.roots.filter((root) => root.key !== "all");
+  const allFilesRoot = filesState.roots.find((root) => root.key === "all");
+  const inAllFilesView = filesState.root === "all";
+  const rootLabel = filesState.roots.find((root) => root.key === filesState.root)?.label || filesState.root;
 
   return (
     <section className="dashboard-grid settings-page">
       <article className="panel-card logs-card settings-summary-card">
         <p className="eyebrow">Scoped Files</p>
         <h1>Minecraft Data Manager</h1>
-        <p className="body-copy">Access is limited to approved data roots for NeoForge configs, world files, server admin files, and mod directories. Hidden paths, symlink escapes, and path traversal are blocked.</p>
+        <p className="body-copy">Use the common-root shortcuts for routine work, or switch to the full server tree when you need to inspect or edit anything under the mounted data directory. Symlink escapes and path traversal are still blocked.</p>
         {message ? <p className="success-text">{message}</p> : null}
         {error ? <p className="error-text">{error}</p> : null}
-        <div className="file-root-tabs">
-          {filesState.roots.map((root) => (
-            <button
-              className={root.key === filesState.root ? "nav-link active" : "nav-link"}
-              key={root.key}
-              onClick={() => void loadFiles(root.key, "")}
-              type="button"
-            >
-              {root.label}
-            </button>
-          ))}
+        <div className="file-view-tabs">
+          <button
+            className={!inAllFilesView ? "nav-link active" : "nav-link"}
+            onClick={() => void loadFiles("config", "")}
+            type="button"
+          >
+            Common Roots
+          </button>
+          <button
+            className={inAllFilesView ? "nav-link active" : "nav-link"}
+            onClick={() => void loadFiles("all", "")}
+            type="button"
+          >
+            {allFilesRoot?.label || "All Server Files"}
+          </button>
         </div>
+        {!inAllFilesView ? (
+          <div className="file-root-tabs">
+            {commonRoots.map((root) => (
+              <button
+                className={root.key === filesState.root ? "nav-link active" : "nav-link"}
+                key={root.key}
+                onClick={() => void loadFiles(root.key, "")}
+                type="button"
+              >
+                {root.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="notice-text">Full tree view starts at `/srv/minecraft/data` and includes hidden files and folders.</p>
+        )}
         <div className="file-breadcrumbs">
           <button className="secondary-button" disabled={!filesState.path || pendingAction !== null} onClick={() => void goUp()} type="button">Up One Level</button>
-          <span>{filesState.root}{breadcrumbs.length > 0 ? ` / ${breadcrumbs.join(" / ")}` : ""}</span>
+          <span>{rootLabel}{breadcrumbs.length > 0 ? ` / ${breadcrumbs.join(" / ")}` : ""}</span>
         </div>
         <div className="player-form">
           <input onChange={(event) => setUploadFileState(event.target.files?.[0] || null)} type="file" />
@@ -960,7 +984,7 @@ const FilesPage = () => {
                 </div>
               </>
             ) : !selectedEntry.isDirectory ? (
-              <p className="body-copy">This file is treated as download-only. Inline editing is limited to `.json`, `.properties`, `.toml`, `.txt`, `.yml`, and `.yaml` files within approved roots.</p>
+              <p className="body-copy">{inAllFilesView ? "This file is download-only because it does not appear to be a small UTF-8 text file." : "This file is treated as download-only. Inline editing is limited to `.json`, `.properties`, `.toml`, `.txt`, `.yml`, and `.yaml` files within the common roots view."}</p>
             ) : null}
           </>
         )}

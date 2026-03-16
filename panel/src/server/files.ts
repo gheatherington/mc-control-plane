@@ -16,6 +16,7 @@ const downloadMimeTypes: Record<string, string> = {
 const maxInlineBytes = 512 * 1024;
 const maxUploadBytes = 32 * 1024 * 1024;
 const safeFileNamePattern = /^[A-Za-z0-9][A-Za-z0-9._ +@-]*$/;
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
 const allowedAdminFiles = new Set([
   "README.txt",
   "banned-ips.json",
@@ -33,6 +34,10 @@ const fileRoots = {
   admin: {
     absolutePath: config.dataRoot,
     label: "Admin Files"
+  },
+  all: {
+    absolutePath: config.dataRoot,
+    label: "All Server Files"
   },
   config: {
     absolutePath: path.join(config.dataRoot, "config"),
@@ -93,7 +98,9 @@ class FilesError extends Error {
 
 const isFileRootKey = (value: string): value is FileRootKey => value in fileRoots;
 
-const normalizeRelativePath = (value: string) => {
+const rootAllowsHiddenPaths = (root: FileRootKey) => root === "all";
+
+const normalizeRelativePath = (value: string, options: { allowHidden?: boolean } = {}) => {
   const trimmed = value.trim().replace(/\\/g, "/");
 
   if (!trimmed) {
@@ -109,7 +116,11 @@ const normalizeRelativePath = (value: string) => {
   const segments = normalized.split("/").filter(Boolean);
 
   for (const segment of segments) {
-    if (segment === "." || segment === ".." || segment.startsWith(".")) {
+    if (segment === "." || segment === "..") {
+      throw new FilesError("hidden and traversal paths are not allowed");
+    }
+
+    if (!options.allowHidden && segment.startsWith(".")) {
       throw new FilesError("hidden and traversal paths are not allowed");
     }
   }
@@ -132,19 +143,42 @@ const isSafeAdminFile = (fileName: string) => allowedAdminFiles.has(fileName);
 
 const isTextLike = (fileName: string) => textLikeExtensions.has(path.extname(fileName).toLowerCase());
 const isEditable = (fileName: string) => editableExtensions.has(path.extname(fileName).toLowerCase());
+const canUseBroadTextEditing = (root: FileRootKey) => root === "all";
 
-const assertSafeFileName = (value: string) => {
+const decodeUtf8 = (buffer: Buffer) => {
+  try {
+    const decoded = utf8Decoder.decode(buffer);
+    return decoded.includes("\u0000") ? null : decoded;
+  } catch {
+    return null;
+  }
+};
+
+const assertSafeFileName = (value: string, options: { allowHidden?: boolean } = {}) => {
   const trimmed = value.trim();
 
-  if (!trimmed || !safeFileNamePattern.test(trimmed) || path.basename(trimmed) !== trimmed || trimmed.startsWith(".")) {
+  if (!trimmed || path.basename(trimmed) !== trimmed || trimmed === "." || trimmed === "..") {
+    throw new FilesError("invalid file name");
+  }
+
+  if (!options.allowHidden && trimmed.startsWith(".")) {
+    throw new FilesError("invalid file name");
+  }
+
+  if (!safeFileNamePattern.test(options.allowHidden && trimmed.startsWith(".") ? trimmed.slice(1) : trimmed)) {
     throw new FilesError("invalid file name");
   }
 
   return trimmed;
 };
 
-const createEntry = (name: string, relativePath: string, stat: { isDirectory(): boolean; mtime: Date; size: number }) => ({
-  editable: !stat.isDirectory() && isEditable(name),
+const createEntry = (
+  root: FileRootKey,
+  name: string,
+  relativePath: string,
+  stat: { isDirectory(): boolean; mtime: Date; size: number }
+) => ({
+  editable: !stat.isDirectory() && (canUseBroadTextEditing(root) ? isTextLike(name) : isEditable(name)),
   isDirectory: stat.isDirectory(),
   modifiedAt: stat.mtime.toISOString(),
   name,
@@ -153,7 +187,9 @@ const createEntry = (name: string, relativePath: string, stat: { isDirectory(): 
 });
 
 const resolveRootPath = async (root: FileRootKey, relativePath: string, options: { allowMissing?: boolean } = {}) => {
-  const normalized = normalizeRelativePath(relativePath);
+  const normalized = normalizeRelativePath(relativePath, {
+    allowHidden: rootAllowsHiddenPaths(root)
+  });
   const rootRealPath = await getRootRealPath(root);
   const targetPath = normalized ? path.join(fileRoots[root].absolutePath, normalized) : fileRoots[root].absolutePath;
   const targetExists = await fs.lstat(targetPath).catch(() => null);
@@ -207,7 +243,7 @@ const listAdminFiles = async (): Promise<FileEntry[]> => {
         return null;
       }
 
-      return createEntry(name, name, stat);
+      return createEntry("admin", name, name, stat);
     }));
 
   return entries
@@ -226,8 +262,8 @@ const sortEntries = (entries: FileEntry[]) => entries.sort((left, right) => {
 const toRootsList = () => (Object.entries(fileRoots) as Array<[FileRootKey, { absolutePath: string; label: string }]>)
   .map(([key, value]) => ({
     key,
-    label: value.label,
-    path: value.absolutePath
+      label: value.label,
+      path: value.absolutePath
   }));
 
 export const assertFileRoot = (value: string) => {
@@ -260,7 +296,7 @@ export const listFiles = async (root: FileRootKey, relativePath = ""): Promise<F
 
   const names = await fs.readdir(resolved.targetPath);
   const entries = await Promise.all(names.map(async (name) => {
-    if (name.startsWith(".")) {
+    if (!rootAllowsHiddenPaths(root) && name.startsWith(".")) {
       return null;
     }
 
@@ -272,7 +308,7 @@ export const listFiles = async (root: FileRootKey, relativePath = ""): Promise<F
       return null;
     }
 
-    return createEntry(name, childRelativePath, stat);
+    return createEntry(root, name, childRelativePath, stat);
   }));
 
   return {
@@ -294,9 +330,9 @@ export const readFileContent = async (root: FileRootKey, relativePath: string): 
     throw new FilesError("path is not a file");
   }
 
-  const entry = createEntry(path.basename(resolved.normalized), resolved.normalized, resolved.targetStat);
+  const entry = createEntry(root, path.basename(resolved.normalized), resolved.normalized, resolved.targetStat);
 
-  if (!isTextLike(entry.name)) {
+  if (!canUseBroadTextEditing(root) && !isTextLike(entry.name)) {
     return {
       editable: false,
       entry,
@@ -308,10 +344,24 @@ export const readFileContent = async (root: FileRootKey, relativePath: string): 
     throw new FilesError("file is too large for inline reading");
   }
 
+  const payload = await fs.readFile(resolved.targetPath);
+  const decoded = decodeUtf8(payload);
+
+  if (decoded === null) {
+    return {
+      editable: false,
+      entry,
+      root
+    };
+  }
+
   return {
-    content: await fs.readFile(resolved.targetPath, "utf8"),
-    editable: entry.editable,
-    entry,
+    content: decoded,
+    editable: canUseBroadTextEditing(root) ? true : entry.editable,
+    entry: {
+      ...entry,
+      editable: canUseBroadTextEditing(root) ? true : entry.editable
+    },
     root
   };
 };
@@ -336,7 +386,9 @@ export const downloadFile = async (root: FileRootKey, relativePath: string) => {
 };
 
 export const uploadFile = async (root: FileRootKey, relativeDirectory: string, fileName: string, contentBase64: string) => {
-  const safeName = assertSafeFileName(fileName);
+  const safeName = assertSafeFileName(fileName, {
+    allowHidden: rootAllowsHiddenPaths(root)
+  });
   const payload = Buffer.from(contentBase64, "base64");
 
   if (!payload.length) {
@@ -351,7 +403,9 @@ export const uploadFile = async (root: FileRootKey, relativeDirectory: string, f
     throw new FilesError("upload target is not an approved admin file");
   }
 
-  const directoryPath = root === "admin" ? "" : normalizeRelativePath(relativeDirectory);
+  const directoryPath = root === "admin" ? "" : normalizeRelativePath(relativeDirectory, {
+    allowHidden: rootAllowsHiddenPaths(root)
+  });
   const parent = await resolveRootPath(root, directoryPath);
 
   if (root !== "admin" && !parent.targetStat?.isDirectory()) {
@@ -365,10 +419,12 @@ export const uploadFile = async (root: FileRootKey, relativeDirectory: string, f
 };
 
 export const writeTextFile = async (root: FileRootKey, relativePath: string, content: string) => {
-  const normalized = normalizeRelativePath(relativePath);
+  const normalized = normalizeRelativePath(relativePath, {
+    allowHidden: rootAllowsHiddenPaths(root)
+  });
   const fileName = path.basename(normalized);
 
-  if (!isEditable(fileName)) {
+  if (!canUseBroadTextEditing(root) && !isEditable(fileName)) {
     throw new FilesError("only approved text files may be edited inline");
   }
 
@@ -390,7 +446,9 @@ export const renameFile = async (root: FileRootKey, relativePath: string, nextNa
     throw new FilesError("admin files cannot be renamed");
   }
 
-  const safeName = assertSafeFileName(nextName);
+  const safeName = assertSafeFileName(nextName, {
+    allowHidden: rootAllowsHiddenPaths(root)
+  });
   const resolved = await resolveRootPath(root, relativePath);
 
   if (!resolved.targetStat) {
@@ -407,7 +465,9 @@ export const renameFile = async (root: FileRootKey, relativePath: string, nextNa
 };
 
 export const deleteFile = async (root: FileRootKey, relativePath: string) => {
-  const normalized = normalizeRelativePath(relativePath);
+  const normalized = normalizeRelativePath(relativePath, {
+    allowHidden: rootAllowsHiddenPaths(root)
+  });
 
   if (!normalized) {
     throw new FilesError("refusing to delete a root");

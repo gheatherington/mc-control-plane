@@ -385,11 +385,19 @@ a {
   margin-top: 1.5rem;
 }
 
+.file-view-tabs,
 .file-root-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
   margin: 1.25rem 0 1rem;
+}
+
+.file-view-tabs .nav-link,
+.file-root-tabs .nav-link {
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  font: inherit;
 }
 
 .file-breadcrumbs {
