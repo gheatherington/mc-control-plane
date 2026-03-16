@@ -121,7 +121,9 @@ const normalizeRawInput = (value: string) => value
 
 const encodePersistedMotd = (value: string) => normalizeRawInput(value).replace(/\n/g, "\\n");
 
-const decodePersistedMotd = (value: string) => value.replace(/\\n/g, "\n");
+const decodePersistedMotd = (value: string) => value
+  .replace(/\\u00a7/gi, "§")
+  .replace(/\\n/g, "\n");
 
 const hasVisibleText = (document: MotdDocument) => [document.line1, document.line2]
   .some((line) => line.segments.some((segment) => segment.text.length > 0));

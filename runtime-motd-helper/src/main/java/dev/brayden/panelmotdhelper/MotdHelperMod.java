@@ -7,6 +7,10 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.dedicated.DedicatedServer;
+import net.minecraft.server.dedicated.DedicatedServerProperties;
+import net.minecraft.server.dedicated.DedicatedServerSettings;
+import net.minecraft.server.dedicated.Settings;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
@@ -18,9 +22,11 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -154,6 +160,7 @@ public final class MotdHelperMod {
                         try {
                             server.setMotd(request.motd());
                             server.invalidateStatus();
+                            persistMotd(server, request.motd());
                             future.complete(new ApplyResponse(true, null, request.motd()));
                         } catch (Throwable exception) {
                             LOGGER.error("Failed to apply live MOTD", exception);
@@ -199,6 +206,30 @@ public final class MotdHelperMod {
             try (OutputStream stream = exchange.getResponseBody()) {
                 stream.write(response);
             }
+        }
+
+        private static void persistMotd(MinecraftServer server, String motd) throws ReflectiveOperationException {
+            if (!(server instanceof DedicatedServer dedicatedServer)) {
+                return;
+            }
+
+            Field settingsField = DedicatedServer.class.getDeclaredField("settings");
+            settingsField.setAccessible(true);
+            DedicatedServerSettings settings = (DedicatedServerSettings) settingsField.get(dedicatedServer);
+
+            Field propertiesField = Settings.class.getDeclaredField("properties");
+            propertiesField.setAccessible(true);
+
+            settings.update((current) -> {
+                try {
+                    Properties nextProperties = new Properties();
+                    nextProperties.putAll((Properties) propertiesField.get(current));
+                    nextProperties.setProperty("motd", motd);
+                    return new DedicatedServerProperties(nextProperties);
+                } catch (IllegalAccessException exception) {
+                    throw new RuntimeException("Failed to access dedicated server properties", exception);
+                }
+            });
         }
     }
 }
