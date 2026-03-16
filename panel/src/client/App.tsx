@@ -654,6 +654,8 @@ const FilesPage = () => {
   const [selectedEntry, setSelectedEntry] = useState<FileEntry | null>(null);
   const [selectedContent, setSelectedContent] = useState<FileContentResponse | null>(null);
   const [draftContent, setDraftContent] = useState("");
+  const [navigationHistory, setNavigationHistory] = useState<Array<{ path: string; root: FilesResponse["root"] }>>([]);
+  const [navigationIndex, setNavigationIndex] = useState(-1);
   const [renameValue, setRenameValue] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [uploadFileState, setUploadFileState] = useState<File | null>(null);
@@ -661,7 +663,11 @@ const FilesPage = () => {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const loadFiles = async (root = filesState?.root || "config", nextPath = filesState?.path || "") => {
+  const loadFiles = async (
+    root = filesState?.root || "config",
+    nextPath = filesState?.path || "",
+    historyMode: "push" | "replace" | "skip" = "push"
+  ) => {
     const params = new URLSearchParams({
       root,
       path: nextPath
@@ -674,10 +680,45 @@ const FilesPage = () => {
     setDraftContent("");
     setRenameValue("");
     setSearchValue("");
+
+    const nextLocation = {
+      path: data.path,
+      root: data.root
+    };
+
+    if (historyMode === "skip") {
+      return;
+    }
+
+    if (historyMode === "replace") {
+      setNavigationHistory((current) => {
+        if (navigationIndex < 0 || navigationIndex >= current.length) {
+          return [nextLocation];
+        }
+
+        const next = [...current];
+        next[navigationIndex] = nextLocation;
+        return next;
+      });
+      return;
+    }
+
+    setNavigationHistory((current) => {
+      const base = navigationIndex >= 0 ? current.slice(0, navigationIndex + 1) : [];
+      const previous = base[base.length - 1];
+
+      if (previous && previous.root === nextLocation.root && previous.path === nextLocation.path) {
+        return base;
+      }
+
+      const next = [...base, nextLocation];
+      setNavigationIndex(next.length - 1);
+      return next;
+    });
   };
 
   useEffect(() => {
-    void loadFiles("config", "");
+    void loadFiles("config", "", "push");
   }, []);
 
   const openEntry = async (entry: FileEntry) => {
@@ -860,6 +901,18 @@ const FilesPage = () => {
       }
 
       setFilesState(data.listing as FilesResponse);
+      setNavigationHistory((current) => {
+        if (navigationIndex < 0 || navigationIndex >= current.length) {
+          return current;
+        }
+
+        const next = [...current];
+        next[navigationIndex] = {
+          path: (data.listing as FilesResponse).path,
+          root: (data.listing as FilesResponse).root
+        };
+        return next;
+      });
       setUploadFileState(null);
       setMessage(`Uploaded ${uploadFileState.name}.`);
     } catch (uploadError) {
@@ -877,7 +930,9 @@ const FilesPage = () => {
   const allFilesRoot = filesState.roots.find((root) => root.key === "all");
   const inAllFilesView = filesState.root === "all";
   const rootLabel = filesState.roots.find((root) => root.key === filesState.root)?.label || filesState.root;
-  const visibleEntries = inAllFilesView && searchValue.trim()
+  const canGoBack = navigationIndex > 0;
+  const canGoForward = navigationIndex >= 0 && navigationIndex < navigationHistory.length - 1;
+  const visibleEntries = searchValue.trim()
     ? filesState.entries.filter((entry) => entry.name.toLowerCase().includes(searchValue.trim().toLowerCase()) || entry.path.toLowerCase().includes(searchValue.trim().toLowerCase()))
     : filesState.entries;
 
@@ -892,14 +947,14 @@ const FilesPage = () => {
         <div className="file-view-tabs">
           <button
             className={!inAllFilesView ? "nav-link active" : "nav-link"}
-            onClick={() => void loadFiles("config", "")}
+            onClick={() => void loadFiles("config", "", "push")}
             type="button"
           >
             Common Roots
           </button>
           <button
             className={inAllFilesView ? "nav-link active" : "nav-link"}
-            onClick={() => void loadFiles("all", "")}
+            onClick={() => void loadFiles("all", "", "push")}
             type="button"
           >
             {allFilesRoot?.label || "All Server Files"}
@@ -911,7 +966,7 @@ const FilesPage = () => {
               <button
                 className={root.key === filesState.root ? "nav-link active" : "nav-link"}
                 key={root.key}
-                onClick={() => void loadFiles(root.key, "")}
+                onClick={() => void loadFiles(root.key, "", "push")}
                 type="button"
               >
                 {root.label}
@@ -925,28 +980,69 @@ const FilesPage = () => {
           <button className="secondary-button" disabled={!filesState.path || pendingAction !== null} onClick={() => void goUp()} type="button">Up One Level</button>
           <span>{rootLabel}{breadcrumbs.length > 0 ? ` / ${breadcrumbs.join(" / ")}` : ""}</span>
         </div>
-        {inAllFilesView ? (
-          <div className="player-form">
-            <input
-              onChange={(event) => setSearchValue(event.target.value)}
-              placeholder="Search current folder by file name or path"
-              value={searchValue}
-            />
-          </div>
-        ) : null}
+        <div className="player-form">
+          <input
+            onChange={(event) => setSearchValue(event.target.value)}
+            placeholder="Search current folder by file name or path"
+            value={searchValue}
+          />
+        </div>
         <div className="player-form">
           <input onChange={(event) => setUploadFileState(event.target.files?.[0] || null)} type="file" />
         </div>
         <div className="action-grid">
           <button className={pendingAction === "upload" ? "primary-button is-loading" : "primary-button"} disabled={!uploadFileState || pendingAction !== null} onClick={() => void uploadSelectedFile()} type="button">Upload Here</button>
-          <button className="secondary-button" disabled={pendingAction !== null} onClick={() => void loadFiles(filesState.root, filesState.path)} type="button">Refresh Listing</button>
+          <button className="secondary-button" disabled={pendingAction !== null} onClick={() => void loadFiles(filesState.root, filesState.path, "replace")} type="button">Refresh Listing</button>
         </div>
       </article>
-      <div className={inAllFilesView ? "files-workspace" : "dashboard-grid"}>
-        <article className={`panel-card ${inAllFilesView ? "files-tree-panel" : ""}`}>
+      <div className="files-workspace">
+        <article className="panel-card files-tree-panel">
           <p className="eyebrow">Listing</p>
           <h1>{visibleEntries.length}</h1>
-          <div className={`file-list ${inAllFilesView ? "file-list-scroll" : ""}`}>
+          <div className="file-listing-toolbar">
+            <div className="file-history-controls">
+              <button
+                className="secondary-button"
+                disabled={!canGoBack || pendingAction !== null}
+                onClick={() => {
+                  const target = navigationHistory[navigationIndex - 1];
+
+                  if (!target) {
+                    return;
+                  }
+
+                  setNavigationIndex((current) => current - 1);
+                  void loadFiles(target.root, target.path, "skip");
+                }}
+                type="button"
+              >
+                Back
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canGoForward || pendingAction !== null}
+                onClick={() => {
+                  const target = navigationHistory[navigationIndex + 1];
+
+                  if (!target) {
+                    return;
+                  }
+
+                  setNavigationIndex((current) => current + 1);
+                  void loadFiles(target.root, target.path, "skip");
+                }}
+                type="button"
+              >
+                Forward
+              </button>
+              <button className="secondary-button" disabled={!filesState.path || pendingAction !== null} onClick={() => void goUp()} type="button">Up</button>
+            </div>
+            <div className="file-current-path">
+              <strong>{rootLabel}</strong>
+              <span>{breadcrumbs.length > 0 ? `/${breadcrumbs.join("/")}` : "/"}</span>
+            </div>
+          </div>
+          <div className="file-list file-list-scroll">
             {visibleEntries.map((entry) => (
               <button
                 className={selectedEntry?.path === entry.path ? "file-row active" : "file-row"}
@@ -967,7 +1063,7 @@ const FilesPage = () => {
             {visibleEntries.length === 0 ? <p className="body-copy">{searchValue ? "No files in this folder match the current search." : "This directory is empty."}</p> : null}
           </div>
         </article>
-        <article className={`panel-card logs-card ${inAllFilesView ? "files-editor-panel" : ""}`}>
+        <article className="panel-card logs-card files-editor-panel">
         <p className="eyebrow">Details</p>
         <h1>{selectedEntry ? selectedEntry.name : "Choose A File"}</h1>
         {!selectedEntry ? (
@@ -981,7 +1077,7 @@ const FilesPage = () => {
               <div><span className="metric-label">Modified</span><strong>{new Date(selectedEntry.modifiedAt).toLocaleString()}</strong></div>
             </div>
             {!selectedEntry.isDirectory ? (
-              <div className="action-grid">
+              <div className="action-grid file-details-actions">
                 <button className="secondary-button" onClick={() => {
                   const params = new URLSearchParams({
                     path: selectedEntry.path,
@@ -993,7 +1089,7 @@ const FilesPage = () => {
                 <button className="secondary-button" disabled={pendingAction !== null} onClick={() => void deleteSelected()} type="button">Delete</button>
               </div>
             ) : (
-              <div className="action-grid">
+              <div className="action-grid file-details-actions">
                 <button className="secondary-button" disabled={pendingAction !== null || filesState.root === "admin"} onClick={() => void renameSelected()} type="button">Rename Directory</button>
                 <button className="secondary-button" disabled={pendingAction !== null} onClick={() => void deleteSelected()} type="button">Delete Directory</button>
               </div>
@@ -1006,7 +1102,7 @@ const FilesPage = () => {
             {!selectedEntry.isDirectory && selectedContent?.editable ? (
               <>
                 <textarea className="file-editor" onChange={(event) => setDraftContent(event.target.value)} value={draftContent} />
-                <div className="action-grid">
+                <div className="action-grid file-details-actions">
                   <button className={pendingAction === "save" ? "primary-button is-loading" : "primary-button"} disabled={pendingAction !== null} onClick={() => void saveFile()} type="button">Save File</button>
                 </div>
               </>

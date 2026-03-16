@@ -9,7 +9,9 @@
 - `NEOFORGE_VERSION` is required for runtime changes. The current live stack uses `beta` because the image helper rejects exact `21.11.x-beta` tags.
 - Phase 12 is complete: the panel now has a real `Settings` page with structured read/update APIs, runtime-safe management RPC writes, and guarded restart-required file edits where needed.
 - Phase 16 is complete: the panel now has a scoped Files page with approved roots, safe inline editing, and audited write flows.
+- Phase 16 refinements are complete: the Files route now supports both common-root shortcuts and a full mounted data-tree view, with a side-by-side listing/editor workspace, search, file-type badges, and path history controls.
 - Phase 17 is complete: the panel now has a persistent management event bridge with frontend live updates and polling fallback.
+- The planned Admin Control Plane roadmap is functionally complete; remaining work is cleanup, polish, and any post-plan hardening.
 - Git tracking is now part of the operational workflow: completed phases and meaningful stack, panel, or mod changes should be committed promptly.
 
 ## Phase Log
@@ -337,12 +339,15 @@ Completed:
 - Added `/api/files`, `/api/files/content`, `/api/files/download`, `/api/files/upload`, `/api/files/write`, `/api/files/rename`, and `DELETE /api/files`.
 - Added a live Files page with root navigation, breadcrumbs, guarded delete actions, download flows, upload support, rename support, and inline editing for small safe text files.
 - Added explicit file audit events for upload, write, rename, and delete operations.
+- Expanded the Files route so operators can switch between common-root shortcuts and the full mounted server tree under `data/`.
+- Reworked the Files UI into a horizontal listing/editor workspace, added file-type badges, folder search, current-path display, back/forward/up navigation, and row/layout fixes for long file names and tighter detail-panel spacing.
 
 Validation:
 
 - `npm run check` in `panel/`
 - `npm run build` in `panel/`
 - `docker compose config`
+- repeated `docker compose up -d --build panel` rebuilds during Files UI refinement
 - blocked traversal tests against disallowed and hidden paths
 - safe text-edit tests against NeoForge config files
 - binary upload/download tests

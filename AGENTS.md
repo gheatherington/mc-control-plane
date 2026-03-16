@@ -26,6 +26,7 @@ This server was built with the following fixed decisions:
 - Container UID/GID mapping: `1000:1000`.
 - Current running services: `neoforge`, `panel`, and `caddy`.
 - Panel access model: single-admin LAN page with no auth layer.
+- Overall project state: the planned Admin Control Plane phases are implemented; current work is refinement, cleanup, and hardening rather than missing core features.
 
 The original source folder under `/home/brayden/fabric-minecraft-server` was cleaned up after deployment. Ongoing management should happen only from `/opt/fabric-minecraft-server`.
 
@@ -79,4 +80,5 @@ Do not expose secrets or back up `data/` carelessly. Keep the Minecraft version 
 - The host-local Java 21 and Gradle toolchain remains installed under `/home/brayden/.local/opt`, and `panel-mod/` remains available as a legacy Fabric mod workspace if older bridge experiments need to be referenced.
 - NeoForge migration is complete: the runtime now uses `TYPE=NEOFORGE`, `NEOFORGE_VERSION=beta` because the current image helper rejects exact `21.11.x-beta` tags, and the live service names are `neoforge-minecraft-server`, `neoforge-minecraft-panel`, and `neoforge-minecraft-panel-caddy`.
 - Phase 16 is complete: the panel now exposes scoped file-management APIs and a live Files page for approved data roots, traversal-resistant navigation, download/upload flows, guarded rename/delete actions, safe inline editing for small text configs, and explicit file audit events.
+- Phase 16 refinements are complete: the Files route now supports both common-root shortcuts and a full mounted server-tree view, uses a horizontal listing/editor workspace in both modes, exposes current-path plus back/forward/up navigation, supports folder search, shows file-type badges, and includes layout fixes for long file names and detail-panel spacing.
 - Phase 17 is complete: the panel now keeps a persistent management API subscriber, pushes dashboard and player refreshes over SSE to the frontend, keeps a polling fallback when subscription coverage is unavailable or incomplete, and keeps RCON narrowed to raw console commands only.
