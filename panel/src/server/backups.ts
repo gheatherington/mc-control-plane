@@ -72,6 +72,14 @@ const ensureRestoreWorkspaceRoot = async () => {
   await fs.mkdir(restoreWorkspaceRoot, { recursive: true });
 };
 
+const clearDirectoryContents = async (directoryPath: string) => {
+  const entries = await fs.readdir(directoryPath, { withFileTypes: true }).catch(() => []);
+
+  await Promise.all(entries.map((entry) => (
+    fs.rm(path.join(directoryPath, entry.name), { force: true, recursive: true })
+  )));
+};
+
 const sanitizeBackupLabel = (value: string | undefined) => {
   if (!value) {
     return "";
@@ -272,8 +280,7 @@ export const restoreBackup = async (name: string, confirmation: string) => {
 
     await fs.cp(config.dataRoot, previousRoot, { recursive: true });
     previousCopyCreated = true;
-    await fs.rm(config.dataRoot, { force: true, recursive: true });
-    await fs.mkdir(config.dataRoot, { recursive: true });
+    await clearDirectoryContents(config.dataRoot);
     await fs.cp(extractedDataRoot, config.dataRoot, { recursive: true });
     restored = true;
 
@@ -282,8 +289,7 @@ export const restoreBackup = async (name: string, confirmation: string) => {
     });
   } catch (error) {
     if (previousCopyCreated && !restored) {
-      await fs.rm(config.dataRoot, { force: true, recursive: true }).catch(() => undefined);
-      await fs.mkdir(config.dataRoot, { recursive: true }).catch(() => undefined);
+      await clearDirectoryContents(config.dataRoot).catch(() => undefined);
       await fs.cp(previousRoot, config.dataRoot, { recursive: true }).catch(() => undefined);
     }
 

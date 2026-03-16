@@ -216,6 +216,19 @@ const BackupProgressIndicator = ({ label, detail }: { label: string; detail: str
   </div>
 );
 
+const BackupErrorModal = ({ message, onClose }: { message: string; onClose: () => void }) => (
+  <div className="backup-modal-backdrop" role="presentation">
+    <div aria-labelledby="backup-error-title" aria-modal="true" className="backup-modal" role="alertdialog">
+      <p className="eyebrow">Backup Error</p>
+      <h1 id="backup-error-title">Backup Action Failed</h1>
+      <p className="body-copy">{message}</p>
+      <div className="action-grid">
+        <button className="primary-button" onClick={onClose} type="button">Dismiss</button>
+      </div>
+    </div>
+  </div>
+);
+
 const LogViewer = ({ logs }: { logs: string[] }) => {
   const logRef = useRef<HTMLPreElement | null>(null);
 
@@ -772,6 +785,7 @@ const BackupsPage = () => {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [modalError, setModalError] = useState("");
   const creatingBackup = pendingAction === "create";
   const restoringBackup = pendingAction !== null && pendingAction.startsWith("restore:");
   const activeRestoreName = restoringBackup ? pendingAction.slice("restore:".length) : "";
@@ -815,6 +829,7 @@ const BackupsPage = () => {
     setPendingAction("create");
     setError("");
     setMessage("");
+    setModalError("");
 
     const response = await fetch("/api/backups", {
       body: JSON.stringify({
@@ -832,7 +847,9 @@ const BackupsPage = () => {
     setPendingAction(null);
 
     if (!response.ok) {
-      setError(data.error || "Failed to create backup");
+      const nextError = data.error || "Failed to create backup";
+      setError(nextError);
+      setModalError(nextError);
       return;
     }
 
@@ -846,6 +863,7 @@ const BackupsPage = () => {
     setPendingAction(`delete:${name}`);
     setError("");
     setMessage("");
+    setModalError("");
 
     const response = await fetch(`/api/backups/${encodeURIComponent(name)}`, {
       method: "DELETE"
@@ -854,7 +872,9 @@ const BackupsPage = () => {
     setPendingAction(null);
 
     if (!response.ok) {
-      setError(data.error || "Failed to delete backup");
+      const nextError = data.error || "Failed to delete backup";
+      setError(nextError);
+      setModalError(nextError);
       return;
     }
 
@@ -874,6 +894,7 @@ const BackupsPage = () => {
     setPendingAction(`restore:${selectedBackup.name}`);
     setError("");
     setMessage("");
+    setModalError("");
 
     const response = await fetch(`/api/backups/${encodeURIComponent(selectedBackup.name)}/restore`, {
       body: JSON.stringify({
@@ -888,7 +909,9 @@ const BackupsPage = () => {
     setPendingAction(null);
 
     if (!response.ok) {
-      setError(data.error || "Failed to restore backup");
+      const nextError = data.error || "Failed to restore backup";
+      setError(nextError);
+      setModalError(nextError);
       return;
     }
 
@@ -906,8 +929,10 @@ const BackupsPage = () => {
   }
 
   return (
-    <section className="dashboard-grid settings-page">
-      <article className="panel-card logs-card settings-summary-card">
+    <>
+      {modalError ? <BackupErrorModal message={modalError} onClose={() => setModalError("")} /> : null}
+      <section className="dashboard-grid settings-page">
+        <article className="panel-card logs-card settings-summary-card">
         <p className="eyebrow">Backup Control</p>
         <h1>Scoped Data Archives</h1>
         <p className="body-copy">Archives are created only from the mounted Minecraft data directory and stored under the configured backups root. The options below control which data classes are included in the archive, with world data enabled by default.</p>
@@ -921,8 +946,8 @@ const BackupsPage = () => {
         {restoringBackup ? <BackupProgressIndicator detail={`Restoring ${activeRestoreName}. The server data is being replaced and the service may restart if it was running.`} label="Restoring Backup" /> : null}
         {message ? <p className="success-text">{message}</p> : null}
         {error ? <p className="error-text">{error}</p> : null}
-      </article>
-      <article className="panel-card">
+        </article>
+        <article className="panel-card">
         <p className="eyebrow">Create Backup</p>
         <h1>New Archive</h1>
         <p className="body-copy">Optional labels are sanitized into the archive name. Checked options are included in the new archive. `World Data` starts enabled so world saves are backed up by default.</p>
@@ -949,8 +974,8 @@ const BackupsPage = () => {
           <button className="primary-button" disabled={!!pendingAction} onClick={() => void createArchive()} type="button">Create Backup</button>
           <button className="secondary-button" disabled={!!pendingAction} onClick={() => void loadBackups()} type="button">Refresh Inventory</button>
         </div>
-      </article>
-      <article className="panel-card">
+        </article>
+        <article className="panel-card">
         <p className="eyebrow">Archive Inventory</p>
         <h1>{backupsState.backups.length}</h1>
         <div className="backup-table">
@@ -982,8 +1007,8 @@ const BackupsPage = () => {
           ))}
           {backupsState.backups.length === 0 ? <p className="body-copy">No backups have been created yet.</p> : null}
         </div>
-      </article>
-      <article className="panel-card">
+        </article>
+        <article className="panel-card">
         <p className="eyebrow">Restore Flow</p>
         <h1>{inspectTarget || selectedBackup?.name || "Select A Backup"}</h1>
         {inspectTarget ? (
@@ -1023,8 +1048,9 @@ const BackupsPage = () => {
         ) : (
           <p className="body-copy">Inspect an archive to review its metadata and restore phrase.</p>
         )}
-      </article>
-    </section>
+        </article>
+      </section>
+    </>
   );
 };
 
