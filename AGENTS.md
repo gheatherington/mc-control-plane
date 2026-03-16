@@ -9,6 +9,7 @@ This live directory is the canonical home for the NeoForge Minecraft server. Kee
 - `README.md`: operator workflow and day-to-day commands.
 - `AGENTS.md`: contributor and maintenance guidance for this deployed stack.
 - `migration_plan.md`: handoff plan for the NeoForge rebaseline plus remaining Control Plane phases.
+- `motd_plan.md`: execution-ready plan for the MOTD editor rework, agent delegation, and the live NeoForge MOTD helper on `1.21.1`.
 
 Runtime server data lives in `/opt/fabric-minecraft-server/data`. That includes worlds, logs, configs, whitelist data, and future mods.
 
@@ -24,15 +25,18 @@ This server was built with the following fixed decisions:
 - Memory target: `12G` max heap, `2G` initial heap.
 - Host game port: `6767/tcp`, forwarded to container `25565/tcp`.
 - Admin panel port: `8080/tcp` through Caddy.
+- Optional DuckDNS updater profile: `duckdns`, configured for the `goyminecrafting` subdomain and intended only for the public game address.
 - Internal Minecraft management API: `25585/tcp` remains configured on the Compose network, but the pinned `Minecraft 1.21.1` BMC5 runtime cannot expose it because the protocol was introduced later.
+- Internal MOTD helper API: `25586/tcp` is used on the Compose network for live MOTD applies on the pinned `1.21.1` runtime.
+- MOTD ownership: the panel is now the sole persistence owner, Docker Compose no longer injects `MOTD`, `data/server.properties` is the canonical persisted value, and the runtime helper applies live changes while the server is running.
 - Control plane integration path: the panel prefers Minecraft's built-in JSON-RPC management API on `25585` when the runtime supports it and otherwise falls back to Docker, file, and RCON-backed operations; `panel-mod/` is not used by the live stack.
 - Console-noise caveat: because the BMC5 runtime is not binding `25585`, the panel continues to fall back to RCON-backed state checks; the panel console now strips ANSI/control-sequence garbage and filters local RCON connect/disconnect noise plus repeated `AllTheLeaks` leak-summary spam from the Admin Control Plane view, but the underlying server log may still contain those entries until the mod behavior itself is addressed.
 - Healthcheck caveat: the NeoForge container uses `mc-health`, but the BMC5 runtime can stall under load; the current stack widens the Docker health window and disables AllTheLeaks passive leak-summary reporting so shorter lag spikes do not immediately mark the server unhealthy.
-- Current validation baseline: `docker compose config`, panel `npm run check`, panel `npm run build`, and `docker compose up -d --build --remove-orphans` all passed for the `1.21.1` migration.
+- Current validation baseline: `docker compose config`, panel `npm run check`, panel `npm run build`, helper `gradle clean build`, live MOTD save/ping/restart persistence checks, and `docker compose up -d --build --remove-orphans` all passed for the current `1.21.1` stack.
 - Management protocol regression boundary: native JSON-RPC was healthy on earlier `1.21.11` test runs and is unavailable on the current pinned `1.21.1` BMC5 runtime.
 - Owner: `brayden:brayden` for the stack directory and data directory.
 - Container UID/GID mapping: `1000:1000`.
-- Current running services: `neoforge`, `panel`, and `caddy`.
+- Current running services: `neoforge`, `panel`, `caddy`, and optional `duckdns` when the profile is enabled.
 - Panel access model: single-admin LAN page with no auth layer.
 - Overall project state: the planned Admin Control Plane phases are implemented; current work is refinement, cleanup, and hardening rather than missing core features.
 
@@ -43,6 +47,7 @@ Run from `/opt/fabric-minecraft-server` unless noted:
 
 - `docker compose config`: validate the Compose stack and `.env`.
 - `docker compose up -d`: start or recreate the server.
+- `docker compose --profile duckdns up -d duckdns`: start or refresh the optional DuckDNS updater after setting `DUCKDNS_TOKEN`.
 - `docker compose ps`: inspect container state.
 - `docker compose logs -f`: follow server logs.
 - `docker compose restart`: restart the service after config or mod changes.
@@ -69,7 +74,7 @@ Git history is now available in this environment, so use short imperative commit
 Always update the git repo whenever a phase is completed or when a meaningful stack, panel, or mod change has been made. Do not leave completed work untracked.
 
 ## Security & Configuration Tips
-Do not expose secrets or back up `data/` carelessly. Keep the Minecraft version pinned, review operator and whitelist settings before public use, and preserve `brayden` ownership on `/opt/fabric-minecraft-server` after restores or manual file copies.
+Do not expose secrets or back up `data/` carelessly. Keep the Minecraft version pinned, review operator and whitelist settings before public use, and preserve `brayden` ownership on `/opt/fabric-minecraft-server` after restores or manual file copies. DuckDNS should track the network's public IPv4 only; do not forward the panel's `8080/tcp` outside the LAN.
 
 ## Progress Notes
 
@@ -96,3 +101,8 @@ Do not expose secrets or back up `data/` carelessly. Keep the Minecraft version 
 - Phase 16 is complete: the panel now exposes scoped file-management APIs and a live Files page for approved data roots, traversal-resistant navigation, download/upload flows, guarded rename/delete actions, safe inline editing for small text configs, and explicit file audit events.
 - Phase 16 refinements are complete: the Files route now supports both common-root shortcuts and a full mounted server-tree view, uses a horizontal listing/editor workspace in both modes, exposes current-path plus back/forward/up navigation, supports folder search, shows file-type badges, and includes layout fixes for long file names and detail-panel spacing.
 - Phase 17 is complete: the panel now keeps a persistent management API subscriber for supported runtimes, pushes dashboard and player refreshes over SSE to the frontend, keeps a polling fallback when subscription coverage is unavailable or incomplete, and capability-gates the subscriber on the current `1.21.1` BMC5 line where native `25585` support does not exist.
+- 2026-03-16 MOTD rework planning is complete: investigation confirmed the current MOTD editor is still a generic settings field, the pinned `1.21.1` runtime cannot use the native live settings API for MOTD updates, and the live stack still has split MOTD ownership because Compose injects `MOTD` while the panel also edits `data/server.properties`, which likely explains the reported revert behavior.
+- 2026-03-16 MOTD execution brief is complete: `/opt/fabric-minecraft-server/motd_plan.md` now captures the agreed implementation plan for a dedicated visual-builder-first MOTD editor with a raw-code tab, two-line support, standard legacy Minecraft colors/styles, read-only builder behavior while raw edits are active, removal of Compose-owned MOTD persistence, a new server-side NeoForge MOTD helper for live updates on `1.21.1`, and an agent-split delivery model covering runtime helper, backend API, UI/UX, coordination, and review/testing.
+- 2026-03-16 MOTD implementation is complete: the Settings page now exposes a dedicated MOTD editor with a visual builder, raw-code mode, two-line support, standard legacy colors/styles, live preview, and truthful apply-state messaging, while the backend uses dedicated MOTD parsing/serialization instead of the generic settings field.
+- 2026-03-16 MOTD runtime integration is complete: Compose no longer injects `MOTD`, the panel now owns persistence in `data/server.properties`, the new NeoForge helper under `/opt/fabric-minecraft-server/runtime-motd-helper` applies live MOTD changes over internal port `25586`, and the helper also updates dedicated server settings so MOTD changes survive full server restarts without reverting.
+- 2026-03-16 DuckDNS support is complete for public player access: the Compose stack now includes an optional `duckdns` profile using the `goyminecrafting` subdomain so DuckDNS can track the network public IPv4 for `goyminecrafting.duckdns.org`, while the admin panel remains LAN-only unless `8080/tcp` is explicitly forwarded.
