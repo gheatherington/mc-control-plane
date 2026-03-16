@@ -327,6 +327,8 @@ const PlayersPage = () => {
   const [reason, setReason] = useState("");
   const [playersState, setPlayersState] = useState<PlayersResponse | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [formReminder, setFormReminder] = useState("");
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadPlayers = async () => {
     const response = await fetch("/api/players");
@@ -339,6 +341,7 @@ const PlayersPage = () => {
   }, []);
 
   const submit = async (endpoint: string, options: RequestInit = {}) => {
+    setFormReminder("");
     setPendingAction(endpoint);
     const response = await fetch(endpoint, {
       headers: {
@@ -353,6 +356,16 @@ const PlayersPage = () => {
     setReason("");
   };
 
+  const requirePlayerName = (callback: () => Promise<void>) => {
+    if (!name.trim()) {
+      setFormReminder("Enter a player name before running that action.");
+      nameInputRef.current?.focus();
+      return;
+    }
+
+    void callback();
+  };
+
   const players = useMemo(() => playersState?.players || [], [playersState]);
 
   return (
@@ -361,18 +374,29 @@ const PlayersPage = () => {
         <p className="eyebrow">Player Management</p>
         <h1>Directory</h1>
         <p className="body-copy">Use exact Minecraft usernames for operator, whitelist, ban, and kick actions.</p>
+        {formReminder ? <p className="notice-text">{formReminder}</p> : null}
         <div className="player-form">
-          <input onChange={(event) => setName(event.target.value)} placeholder="Player name" value={name} />
+          <input
+            onChange={(event) => {
+              setName(event.target.value);
+              if (event.target.value.trim()) {
+                setFormReminder("");
+              }
+            }}
+            placeholder="Player name"
+            ref={nameInputRef}
+            value={name}
+          />
           <input onChange={(event) => setReason(event.target.value)} placeholder="Kick reason (optional)" value={reason} />
         </div>
         <div className="action-grid">
-          <button className="primary-button" disabled={!name || !!pendingAction} onClick={() => void submit("/api/players/whitelist", { body: JSON.stringify({ name }), method: "POST" })} type="button">Whitelist</button>
-          <button className="secondary-button" disabled={!name || !!pendingAction} onClick={() => void submit(`/api/players/whitelist/${encodeURIComponent(name)}`, { method: "DELETE" })} type="button">Remove Whitelist</button>
-          <button className="primary-button" disabled={!name || !!pendingAction} onClick={() => void submit("/api/players/ops", { body: JSON.stringify({ name }), method: "POST" })} type="button">Op</button>
-          <button className="secondary-button" disabled={!name || !!pendingAction} onClick={() => void submit(`/api/players/ops/${encodeURIComponent(name)}`, { method: "DELETE" })} type="button">Deop</button>
-          <button className="primary-button" disabled={!name || !!pendingAction} onClick={() => void submit("/api/players/bans", { body: JSON.stringify({ name }), method: "POST" })} type="button">Ban</button>
-          <button className="secondary-button" disabled={!name || !!pendingAction} onClick={() => void submit(`/api/players/bans/${encodeURIComponent(name)}`, { method: "DELETE" })} type="button">Pardon</button>
-          <button className="secondary-button" disabled={!name || !!pendingAction} onClick={() => void submit("/api/players/kick", { body: JSON.stringify({ name, reason }), method: "POST" })} type="button">Kick</button>
+          <button className="primary-button" disabled={!!pendingAction} onClick={() => requirePlayerName(async () => submit("/api/players/whitelist", { body: JSON.stringify({ name }), method: "POST" }))} type="button">Whitelist</button>
+          <button className="secondary-button" disabled={!!pendingAction} onClick={() => requirePlayerName(async () => submit(`/api/players/whitelist/${encodeURIComponent(name)}`, { method: "DELETE" }))} type="button">Remove Whitelist</button>
+          <button className="primary-button" disabled={!!pendingAction} onClick={() => requirePlayerName(async () => submit("/api/players/ops", { body: JSON.stringify({ name }), method: "POST" }))} type="button">Op</button>
+          <button className="secondary-button" disabled={!!pendingAction} onClick={() => requirePlayerName(async () => submit(`/api/players/ops/${encodeURIComponent(name)}`, { method: "DELETE" }))} type="button">Deop</button>
+          <button className="primary-button" disabled={!!pendingAction} onClick={() => requirePlayerName(async () => submit("/api/players/bans", { body: JSON.stringify({ name }), method: "POST" }))} type="button">Ban</button>
+          <button className="secondary-button" disabled={!!pendingAction} onClick={() => requirePlayerName(async () => submit(`/api/players/bans/${encodeURIComponent(name)}`, { method: "DELETE" }))} type="button">Pardon</button>
+          <button className="secondary-button" disabled={!!pendingAction} onClick={() => requirePlayerName(async () => submit("/api/players/kick", { body: JSON.stringify({ name, reason }), method: "POST" }))} type="button">Kick</button>
           <button
             className={pendingAction === "refresh" ? "secondary-button is-loading" : "secondary-button"}
             disabled={!!pendingAction}
