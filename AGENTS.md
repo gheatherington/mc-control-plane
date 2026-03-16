@@ -8,6 +8,7 @@ This live directory is the canonical home for the Forge Minecraft server. Keep t
 - `.env.example`: reference copy of the intended defaults.
 - `README.md`: operator workflow and day-to-day commands.
 - `AGENTS.md`: contributor and maintenance guidance for this deployed stack.
+- `migration_plan.md`: handoff plan for the NeoForge rebaseline plus remaining Control Plane phases.
 
 Runtime server data lives in `/opt/fabric-minecraft-server/data`. That includes worlds, logs, configs, whitelist data, and future mods.
 
@@ -77,3 +78,4 @@ Do not expose secrets or back up `data/` carelessly. Keep the Minecraft version 
 - Phase 15 is complete: the panel now exposes scoped mod-management APIs and a live Mods page for staged jar uploads, active install promotion, quarantine/remove flows, rollback restores, loader metadata inventory for Fabric and Forge jars, and explicit mod audit events across `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine`.
 - The host-local Java 21 and Gradle toolchain remains installed under `/home/brayden/.local/opt`, and `panel-mod/` remains available as a legacy Fabric mod workspace if older bridge experiments need to be referenced.
 - Forge migration is complete: the runtime now uses `TYPE=FORGE`, the live service names are `forge-minecraft-server`, `forge-minecraft-panel`, and `forge-minecraft-panel-caddy`, and the panel branding plus mod inventory now reflect Forge-first operation.
+- NeoForge migration planning is complete: `migration_plan.md` now defines the next rebaseline from Forge to NeoForge, including the required `plan.md` updates, generic `Modded MC` panel branding, NeoForge metadata support, Phase 16/17 implementation order, review-agent checklists, and interactive-prompt rules for high-impact choices during implementation.
