@@ -7,6 +7,7 @@ import { emitSystemPanelEvent, getBridgeState, subscribeToPanelEvents } from "./
 import { assertFileRoot, deleteFile, downloadFile, listFiles, readFileContent, renameFile, toFilesErrorResponse, uploadFile, writeTextFile } from "./files";
 import { getDashboard, banPlayer, broadcastMessage, deopPlayer, kickPlayer, listPlayers, opPlayer, pardonPlayer, saveWorld, unwhitelistPlayer, whitelistPlayer } from "./minecraft";
 import { config } from "./config";
+import { MotdValidationError, updateMotd } from "./motd";
 import { deleteMod, installMod, listModsInventory, quarantineMod, rejectUploadedMod, restoreQuarantinedMod, toModErrorResponse, uploadModToStaging } from "./mods";
 import { getSettings, refreshRestartBaseline, updateSettings } from "./settings";
 import { writeAuditEvent } from "./audit";
@@ -80,6 +81,8 @@ export const createApp = () => {
       managementHost: config.managementHost,
       managementPort: config.managementPort,
       managementTls: config.managementTls,
+      motdHelperHost: config.motdHelperHost,
+      motdHelperPort: config.motdHelperPort,
       dataRoot: config.dataRoot,
       backupsRoot: config.backupsRoot,
       panelDataRoot: config.panelDataRoot
@@ -105,6 +108,29 @@ export const createApp = () => {
     }
 
     res.json(await updateSettings(values as Record<string, unknown>));
+  });
+
+  app.post("/api/settings/motd", async (req: Request, res: Response) => {
+    const raw = typeof req.body?.raw === "string" ? req.body.raw : null;
+
+    if (raw === null) {
+      res.status(400).json({ error: "raw MOTD text is required" });
+      return;
+    }
+
+    try {
+      const result = await updateMotd(raw);
+      writeScopedAuditEvent(req, "motd-update", 200, "/api/settings/motd");
+      res.json({
+        applyResult: result.applyResult,
+        settings: await getSettings()
+      });
+    } catch (error) {
+      const statusCode = error instanceof MotdValidationError ? 400 : 500;
+      const message = error instanceof Error ? error.message : "Failed to update MOTD";
+      writeScopedAuditEvent(req, "motd-update", statusCode, "/api/settings/motd");
+      res.status(statusCode).json({ error: message });
+    }
   });
 
   app.get("/api/audit", (req: Request, res: Response) => {

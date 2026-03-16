@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="panelmotdhelper"
+version="1.0.0"
+displayName="Panel MOTD Helper"
+description='''
+Applies panel-owned MOTD changes live on the pinned NeoForge 1.21.1 runtime.
+'''
+
+[[dependencies.panelmotdhelper]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.220,)"
+ordering="NONE"
+side="SERVER"
+
+[[dependencies.panelmotdhelper]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1,1.21.2)"
+ordering="NONE"
+side="SERVER"

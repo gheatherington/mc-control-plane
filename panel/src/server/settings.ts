@@ -3,6 +3,8 @@ import path from "node:path";
 import { config } from "./config";
 import { getContainerState } from "./control";
 import { callManagement, getManagementCapability } from "./management";
+import { getMotdSettings } from "./motd";
+import { readServerProperties, writeServerProperties } from "./server-properties";
 
 type SettingType = "boolean" | "enum" | "integer" | "string";
 type SettingValue = boolean | number | string;
@@ -27,11 +29,9 @@ type PendingRestartState = {
 };
 
 const restartBaselinePath = path.join(config.panelDataRoot, "settings", "restart-baseline.json");
-const propertiesPath = path.join(config.dataRoot, "server.properties");
-
 const groupMetadata = {
   capacity: {
-    description: "Player capacity and visible server text.",
+    description: "Player capacity and visible server list counts.",
     title: "Capacity"
   },
   gameplay: {
@@ -171,18 +171,6 @@ const settings: SettingDefinition[] = [
     type: "integer"
   },
   {
-    description: "The message shown in the multiplayer server list.",
-    group: "capacity",
-    key: "motd",
-    label: "MOTD",
-    managementGetMethod: "minecraft:serversettings/motd",
-    managementSetMethod: "minecraft:serversettings/motd/set",
-    normalize: (value) => coerceString(value, { max: 120, min: 1 }),
-    propertyKey: "motd",
-    restartRequired: false,
-    type: "string"
-  },
-  {
     description: "Chunk radius sent to players for rendering.",
     group: "world",
     key: "viewDistance",
@@ -248,53 +236,6 @@ const serializePropertyValue = (value: SettingValue) => {
   return String(value);
 };
 
-const parseProperties = async () => {
-  const raw = await fs.readFile(propertiesPath, "utf8");
-  const values = raw.split("\n").reduce<Record<string, string>>((accumulator, line) => {
-    if (!line || line.startsWith("#") || !line.includes("=")) {
-      return accumulator;
-    }
-
-    const index = line.indexOf("=");
-    const key = line.slice(0, index);
-    const value = line.slice(index + 1);
-    accumulator[key] = value;
-    return accumulator;
-  }, {});
-
-  return values;
-};
-
-const writeProperties = async (updates: Record<string, string>) => {
-  const raw = await fs.readFile(propertiesPath, "utf8");
-  const lines = raw.split("\n");
-  const seen = new Set<string>();
-
-  const updatedLines = lines.map((line) => {
-    if (!line || line.startsWith("#") || !line.includes("=")) {
-      return line;
-    }
-
-    const index = line.indexOf("=");
-    const key = line.slice(0, index);
-
-    if (!(key in updates)) {
-      return line;
-    }
-
-    seen.add(key);
-    return `${key}=${updates[key]}`;
-  });
-
-  for (const [key, value] of Object.entries(updates)) {
-    if (!seen.has(key)) {
-      updatedLines.push(`${key}=${value}`);
-    }
-  }
-
-  await fs.writeFile(propertiesPath, updatedLines.join("\n"));
-};
-
 const getRestartRequiredSettings = () => settings.filter((setting) => setting.restartRequired);
 
 const readRestartBaseline = async (): Promise<PendingRestartState | null> => {
@@ -324,7 +265,7 @@ const writeRestartBaseline = async (properties: Record<string, string>) => {
 };
 
 export const refreshRestartBaseline = async () => {
-  const properties = await parseProperties();
+  const properties = await readServerProperties();
   await writeRestartBaseline(properties);
 };
 
@@ -369,7 +310,7 @@ const readRuntimeValues = async () => {
 
 const buildSettingsPayload = async () => {
   const [properties, runtime] = await Promise.all([
-    parseProperties(),
+    readServerProperties(),
     readRuntimeValues()
   ]);
   let restartBaseline = await readRestartBaseline();
@@ -421,6 +362,7 @@ const buildSettingsPayload = async () => {
     groups,
     liveSettingsAvailable: runtime.liveAvailable,
     management: getManagementCapability(),
+    motd: await getMotdSettings(runtime.running),
     pendingRestart: {
       keys: pendingKeys,
       required: pendingKeys.length > 0,
@@ -439,7 +381,7 @@ export const updateSettings = async (updates: Record<string, unknown>) => {
   const appliedKeys: string[] = [];
   const [runtime, properties] = await Promise.all([
     readRuntimeValues(),
-    parseProperties()
+    readServerProperties()
   ]);
 
   for (const [key, rawValue] of Object.entries(updates)) {
@@ -469,7 +411,7 @@ export const updateSettings = async (updates: Record<string, unknown>) => {
   }
 
   if (Object.keys(propertyUpdates).length > 0) {
-    await writeProperties(propertyUpdates);
+    await writeServerProperties(propertyUpdates);
   }
 
   if (runtimeUpdates.length > 0) {

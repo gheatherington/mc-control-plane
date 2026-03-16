@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
+import { MotdEditor, type MotdSettingsState } from "./motd-editor";
 
 type ManagementCapability = {
   configuredPort: number;
@@ -73,6 +74,7 @@ type SettingsResponse = {
   groups: SettingsGroup[];
   liveSettingsAvailable: boolean;
   management: ManagementCapability;
+  motd: MotdSettingsState;
   pendingRestart: {
     keys: string[];
     required: boolean;
@@ -472,7 +474,7 @@ const DashboardPage = () => {
           Live updates: {renderLiveUpdateState(bridgeState)}
         </p>
         <p className="body-copy">{renderManagementPath(dashboard.server.management)}</p>
-        <p className="body-copy">MOTD: {dashboard.server.motd}</p>
+        <p className="body-copy dashboard-motd">MOTD: {dashboard.server.motd}</p>
         <div className="action-grid">
           <button className="primary-button" disabled={!!pending} onClick={() => void runServerAction("/api/server/start")} type="button">Start</button>
           <button className="secondary-button" disabled={!!pending} onClick={() => void runServerAction("/api/server/stop")} type="button">Stop</button>
@@ -1172,6 +1174,9 @@ const SettingsPage = () => {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [motdPending, setMotdPending] = useState(false);
+  const [motdError, setMotdError] = useState("");
+  const [motdMessage, setMotdMessage] = useState("");
 
   const loadSettings = async () => {
     const response = await fetch("/api/settings");
@@ -1216,6 +1221,39 @@ const SettingsPage = () => {
     );
   };
 
+  const saveMotd = async (raw: string) => {
+    setMotdPending(true);
+    setMotdError("");
+    setMotdMessage("");
+
+    const response = await fetch("/api/settings/motd", {
+      body: JSON.stringify({ raw }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      setMotdPending(false);
+      setMotdError(data.error || "Failed to save MOTD");
+      return;
+    }
+
+    const nextState = data.settings as SettingsResponse;
+    setSettingsState(nextState);
+    setDraft(Object.fromEntries(flattenSettings(nextState.groups).map((setting) => [setting.key, toDraftValue(setting.value)])));
+    setMotdPending(false);
+    setMotdMessage(
+      data.applyResult === "live-and-persisted"
+        ? "Saved MOTD live and persisted to server.properties."
+        : data.applyResult === "persisted-only"
+          ? "Saved MOTD to server.properties. It will apply on the next start."
+          : "Saved MOTD to server.properties, but the live helper did not apply it. Restart the server to use the new MOTD."
+    );
+  };
+
   const restartServer = async () => {
     setPendingAction("restart");
     setError("");
@@ -1246,7 +1284,7 @@ const SettingsPage = () => {
         <p className="body-copy">
           {settingsState.liveSettingsAvailable
             ? "Live-safe settings are applied immediately through the native management API and also persisted back to `server.properties`. Restart-required settings are written safely and held until the next start or restart."
-            : `${settingsState.management.reason} Settings are being persisted to \`server.properties\` and apply on the next start or restart.`}
+            : `${settingsState.management.reason} Generic settings are being persisted to \`server.properties\` and apply on the next start or restart. MOTD is managed separately below through the dedicated helper path.`}
         </p>
         <div className="metric-grid">
           <div><span className="metric-label">Server</span><strong>{settingsState.serverRunning ? "Running" : "Stopped"}</strong></div>
@@ -1268,6 +1306,18 @@ const SettingsPage = () => {
           <button className="secondary-button" disabled={!!pendingAction || !settingsState.pendingRestart.required} onClick={() => void restartServer()} type="button">Restart To Apply</button>
         </div>
       </article>
+      <MotdEditor
+        error={motdError}
+        message={motdMessage}
+        motd={settingsState.motd}
+        onReload={() => {
+          setMotdError("");
+          setMotdMessage("");
+          void loadSettings();
+        }}
+        onSave={(raw) => void saveMotd(raw)}
+        pending={motdPending}
+      />
       <div className="settings-masonry">
         {settingsState.groups.map((group) => (
           <article className="panel-card settings-group-card" key={group.id}>

@@ -27,7 +27,7 @@ services:
       ENABLE_ROLLING_LOGS: "true"
       USE_AIKAR_FLAGS: "true"
       SERVER_NAME: "${SERVER_NAME}"
-      MOTD: "${MOTD}"
+      PANEL_MOTD_HELPER_PORT: "${MC_MOTD_HELPER_PORT:-25586}"
       MAX_PLAYERS: "${MAX_PLAYERS}"
       DIFFICULTY: "${DIFFICULTY}"
       MODE: "${MODE}"
@@ -63,6 +63,8 @@ services:
       MC_MANAGEMENT_HOST: neoforge
       MC_MANAGEMENT_PORT: "${MC_MANAGEMENT_PORT:-25585}"
       MC_MANAGEMENT_TLS: "false"
+      MC_MOTD_HELPER_HOST: neoforge
+      MC_MOTD_HELPER_PORT: "${MC_MOTD_HELPER_PORT:-25586}"
       MC_CONTAINER_NAME: neoforge-minecraft-server
     volumes:
       - ./data:/srv/minecraft/data
@@ -80,3 +82,19 @@ services:
       - "${PANEL_HTTP_PORT:-8080}:80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  duckdns:
+    image: lscr.io/linuxserver/duckdns:latest
+    container_name: neoforge-minecraft-duckdns
+    restart: unless-stopped
+    profiles:
+      - duckdns
+    environment:
+      PUID: "${UID}"
+      PGID: "${GID}"
+      TZ: "${TZ}"
+      SUBDOMAINS: "${DUCKDNS_SUBDOMAINS}"
+      TOKEN: "${DUCKDNS_TOKEN}"
+      UPDATE_IP: "ipv4"
+      LOG_FILE: "false"
+    volumes:
+      - ./duckdns:/config

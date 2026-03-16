@@ -3,6 +3,8 @@ import path from "node:path";
 import { config } from "./config";
 import { getContainerState, getRecentLogs, runRconCommand } from "./control";
 import { callManagement, getManagementCapability } from "./management";
+import { getPersistedMotdDisplay } from "./motd";
+import { readServerProperties } from "./server-properties";
 
 type NamedEntry = {
   created?: string;
@@ -88,23 +90,6 @@ const readJsonFile = async <T>(filename: string, fallback: T): Promise<T> => {
   } catch {
     return fallback;
   }
-};
-
-const parseProperties = async () => {
-  const raw = await fs.readFile(path.join(config.dataRoot, "server.properties"), "utf8");
-  const values = raw.split("\n").reduce<Record<string, string>>((accumulator, line) => {
-    if (!line || line.startsWith("#") || !line.includes("=")) {
-      return accumulator;
-    }
-
-    const index = line.indexOf("=");
-    const key = line.slice(0, index);
-    const value = line.slice(index + 1);
-    accumulator[key] = value;
-    return accumulator;
-  }, {});
-
-  return values;
 };
 
 const mergePlayers = async (remote?: {
@@ -208,10 +193,11 @@ const readOperatorName = (entry: NamedEntry | RemoteOperator) =>
   "player" in entry ? entry.player.name : entry.name;
 
 export const getDashboard = async () => {
-  const [state, properties, logs] = await Promise.all([
+  const [state, properties, logs, persistedMotd] = await Promise.all([
     getContainerState(),
-    parseProperties(),
-    getRecentLogs(20)
+    readServerProperties(),
+    getRecentLogs(20),
+    getPersistedMotdDisplay()
   ]);
   const management = getManagementCapability();
 
@@ -251,7 +237,7 @@ export const getDashboard = async () => {
       difficulty: settings?.difficulty || properties.difficulty,
       management,
       maxPlayers: settings?.maxPlayers || Number(properties["max-players"] || 0),
-      motd: settings?.motd || properties.motd,
+      motd: settings?.motd || persistedMotd,
       onlineMode: properties["online-mode"] === "true",
       port: 6767,
       status: state.Status,
