@@ -373,7 +373,18 @@ const PlayersPage = () => {
           <button className="primary-button" disabled={!name || !!pendingAction} onClick={() => void submit("/api/players/bans", { body: JSON.stringify({ name }), method: "POST" })} type="button">Ban</button>
           <button className="secondary-button" disabled={!name || !!pendingAction} onClick={() => void submit(`/api/players/bans/${encodeURIComponent(name)}`, { method: "DELETE" })} type="button">Pardon</button>
           <button className="secondary-button" disabled={!name || !!pendingAction} onClick={() => void submit("/api/players/kick", { body: JSON.stringify({ name, reason }), method: "POST" })} type="button">Kick</button>
-          <button className="secondary-button" disabled={!!pendingAction} onClick={() => void loadPlayers()} type="button">Refresh</button>
+          <button
+            className={pendingAction === "refresh" ? "secondary-button is-loading" : "secondary-button"}
+            disabled={!!pendingAction}
+            onClick={async () => {
+              setPendingAction("refresh");
+              await loadPlayers();
+              setPendingAction(null);
+            }}
+            type="button"
+          >
+            {pendingAction === "refresh" ? "Refreshing..." : "Refresh"}
+          </button>
         </div>
       </article>
       <article className="panel-card">
