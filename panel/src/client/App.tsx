@@ -381,7 +381,12 @@ const PlayersPage = () => {
         <h1>{players.length}</h1>
         <div className="player-table">
           {players.map((player) => (
-            <div className="player-row" key={player.name}>
+            <button
+              className="player-row player-row-button"
+              key={player.name}
+              onClick={() => setName(player.name)}
+              type="button"
+            >
               <div>
                 <strong>{player.name}</strong>
                 <div className="player-tags">
@@ -392,7 +397,7 @@ const PlayersPage = () => {
                 </div>
               </div>
               <span className="body-copy">{player.uuid || "No UUID yet"}</span>
-            </div>
+            </button>
           ))}
           {players.length === 0 ? <p className="body-copy">No players recorded yet.</p> : null}
         </div>

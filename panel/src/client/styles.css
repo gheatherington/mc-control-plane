@@ -509,6 +509,21 @@ a {
   padding: 0.9rem 1rem;
 }
 
+.player-row-button {
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.player-row-button:hover,
+.player-row-button:focus-visible {
+  background: rgba(255, 179, 138, 0.08);
+  border-color: rgba(255, 179, 138, 0.32);
+  transform: translateY(-1px);
+}
+
 .player-tags {
   display: flex;
   flex-wrap: wrap;
