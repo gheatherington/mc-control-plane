@@ -18,7 +18,6 @@ const localFileHeaderSignature = 0x04034b50;
 const maxMetadataBytes = 128 * 1024;
 const maxUploadBytes = 32 * 1024 * 1024;
 const maxZipCommentBytes = 0xffff;
-const jarNamePattern = /^[A-Za-z0-9][A-Za-z0-9._+-]*\.jar$/;
 const zipMagic = Buffer.from([0x50, 0x4b]);
 
 type ModScope = keyof typeof modRoots;
@@ -85,13 +84,23 @@ const readUInt16 = (buffer: Buffer, offset: number) => buffer.readUInt16LE(offse
 const readUInt32 = (buffer: Buffer, offset: number) => buffer.readUInt32LE(offset);
 
 const validateModName = (value: string) => {
-  const trimmed = value.trim();
+  const fileName = value.normalize("NFC");
 
-  if (!jarNamePattern.test(trimmed) || path.basename(trimmed) !== trimmed) {
+  if (
+    !fileName ||
+    fileName === "." ||
+    fileName === ".." ||
+    fileName.includes("\0") ||
+    fileName.includes(path.sep) ||
+    fileName.includes(path.posix.sep) ||
+    path.win32.basename(fileName) !== fileName ||
+    path.posix.basename(fileName) !== fileName ||
+    !fileName.toLowerCase().endsWith(".jar")
+  ) {
     throw new ModError("invalid mod file name");
   }
 
-  return trimmed;
+  return fileName;
 };
 
 const resolveModPath = async (scope: ModScope, fileName: string, options: { mustExist?: boolean } = {}) => {

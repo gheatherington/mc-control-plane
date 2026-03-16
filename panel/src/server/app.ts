@@ -133,7 +133,12 @@ export const createApp = () => {
   });
 
   app.get("/api/mods", async (_req: Request, res: Response) => {
-    res.json(await listModsInventory());
+    try {
+      res.json(await listModsInventory());
+    } catch (error) {
+      const response = toModErrorResponse(error);
+      res.status(response.statusCode).json({ error: response.message });
+    }
   });
 
   app.get("/api/files", async (req: Request, res: Response) => {

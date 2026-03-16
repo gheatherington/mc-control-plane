@@ -1790,17 +1790,32 @@ const ModsPage = () => {
   const [modsState, setModsState] = useState<ModsResponse | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   const loadMods = async () => {
     const response = await fetch("/api/mods");
-    const data = await response.json() as ModsResponse;
-    setModsState(data);
+    const data = await response.json() as ModsResponse | { error?: string };
+
+    if (!response.ok) {
+      throw new Error(typeof data.error === "string" ? data.error : "Failed to load mod inventory");
+    }
+
+    setModsState(data as ModsResponse);
+    setError("");
   };
 
   useEffect(() => {
-    void loadMods();
+    void (async () => {
+      try {
+        await loadMods();
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "Failed to load mod inventory");
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   const runAction = async (endpoint: string, options: RequestInit = {}, successMessage = "Mod action completed.") => {
@@ -1859,8 +1874,34 @@ const ModsPage = () => {
     }
   };
 
-  if (!modsState) {
+  if (loading) {
     return <Page description="Loading active, staged, and quarantined mod jars from the scoped server directories..." title="Mods" />;
+  }
+
+  if (!modsState) {
+    return (
+      <section className="panel-card">
+        <p className="eyebrow">Mods</p>
+        <h1>Mods</h1>
+        <p className="body-copy">The panel could not load the active, staged, and quarantined mod jars.</p>
+        {error ? <p className="error-text">{error}</p> : null}
+        <div className="action-grid">
+          <button className={pendingAction === "refresh" ? "primary-button is-loading" : "primary-button"} disabled={pendingAction !== null} onClick={async () => {
+            setPendingAction("refresh");
+            setLoading(true);
+
+            try {
+              await loadMods();
+            } catch (loadError) {
+              setError(loadError instanceof Error ? loadError.message : "Failed to load mod inventory");
+            } finally {
+              setLoading(false);
+              setPendingAction(null);
+            }
+          }} type="button">Retry</button>
+        </div>
+      </section>
+    );
   }
 
   const totalMods = modsState.mods.active.length + modsState.mods.staging.length + modsState.mods.quarantine.length;
@@ -1883,8 +1924,13 @@ const ModsPage = () => {
         <div className="action-grid">
           <button className={pendingAction === "refresh" ? "primary-button is-loading" : "primary-button"} disabled={pendingAction !== null} onClick={async () => {
             setPendingAction("refresh");
-            await loadMods();
-            setPendingAction(null);
+            try {
+              await loadMods();
+            } catch (loadError) {
+              setError(loadError instanceof Error ? loadError.message : "Failed to load mod inventory");
+            } finally {
+              setPendingAction(null);
+            }
           }} type="button">Refresh Inventory</button>
         </div>
       </article>
