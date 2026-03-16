@@ -25,11 +25,15 @@ type ModScope = keyof typeof modRoots;
 type ModWriteScope = Exclude<ModScope, "active"> | "active";
 type QuarantineReason = "delete-active" | "manual-quarantine" | "rejected-upload";
 
-type FabricModMetadata = {
+type ModLoader = "fabric" | "forge";
+
+type ModMetadata = {
   description?: string;
-  environment?: string;
+  descriptor: "fabric.mod.json" | "META-INF/mods.toml";
   id: string;
+  loader: ModLoader;
   name?: string;
+  side?: string;
   version?: string;
 };
 
@@ -40,7 +44,7 @@ type QuarantineMetadata = {
 };
 
 export type ModRecord = {
-  fabricMetadata: FabricModMetadata | null;
+  metadata: ModMetadata | null;
   fileName: string;
   modifiedAt: string;
   quarantineMetadata?: QuarantineMetadata;
@@ -207,7 +211,7 @@ const extractZipEntry = async (buffer: Buffer, fileName: string) => {
   }
 
   if (entry.uncompressedSize > maxMetadataBytes) {
-    throw new ZipError("fabric metadata exceeds maximum size");
+    throw new ZipError("mod metadata exceeds maximum size");
   }
 
   if (readUInt32(buffer, entry.localHeaderOffset) !== localFileHeaderSignature) {
@@ -231,7 +235,7 @@ const extractZipEntry = async (buffer: Buffer, fileName: string) => {
   throw new ZipError(`unsupported compression method ${entry.compressionMethod}`);
 };
 
-const parseFabricMetadata = (value: unknown): FabricModMetadata | null => {
+const parseFabricMetadata = (value: unknown): ModMetadata | null => {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -244,24 +248,69 @@ const parseFabricMetadata = (value: unknown): FabricModMetadata | null => {
   }
 
   return {
+    descriptor: "fabric.mod.json",
     description: typeof metadata.description === "string" ? metadata.description : undefined,
-    environment: typeof metadata.environment === "string" ? metadata.environment : undefined,
     id,
+    loader: "fabric",
     name: typeof metadata.name === "string" ? metadata.name : undefined,
+    side: typeof metadata.environment === "string" ? metadata.environment : undefined,
     version: typeof metadata.version === "string" ? metadata.version : undefined
   };
 };
 
-const readFabricMetadata = async (filePath: string) => {
+const readTomlString = (raw: string, key: string) => {
+  const patterns = [
+    new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m"),
+    new RegExp(`^\\s*${key}\\s*=\\s*'([^']*)'`, "m"),
+    new RegExp(`^\\s*${key}\\s*=\\s*'''([\\s\\S]*?)'''`, "m"),
+    new RegExp(`^\\s*${key}\\s*=\\s*\"\"\"([\\s\\S]*?)\"\"\"`, "m")
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+
+    if (match) {
+      return match[1].trim();
+    }
+  }
+
+  return undefined;
+};
+
+const parseForgeMetadata = (raw: string): ModMetadata | null => {
+  const id = readTomlString(raw, "modId");
+
+  if (!id) {
+    return null;
+  }
+
+  return {
+    descriptor: "META-INF/mods.toml",
+    description: readTomlString(raw, "description"),
+    id,
+    loader: "forge",
+    name: readTomlString(raw, "displayName"),
+    side: readTomlString(raw, "side"),
+    version: readTomlString(raw, "version")
+  };
+};
+
+const readJarMetadata = async (filePath: string) => {
   try {
     const buffer = await fs.readFile(filePath);
     const rawMetadata = await extractZipEntry(buffer, "fabric.mod.json");
 
-    if (!rawMetadata) {
+    if (rawMetadata) {
+      return parseFabricMetadata(JSON.parse(rawMetadata.toString("utf8")));
+    }
+
+    const rawForgeMetadata = await extractZipEntry(buffer, "META-INF/mods.toml");
+
+    if (!rawForgeMetadata) {
       return null;
     }
 
-    return parseFabricMetadata(JSON.parse(rawMetadata.toString("utf8")));
+    return parseForgeMetadata(rawForgeMetadata.toString("utf8"));
   } catch (error) {
     if (error instanceof ZipError || error instanceof SyntaxError) {
       return null;
@@ -339,7 +388,7 @@ const createModRecord = async (scope: ModScope, fileName: string): Promise<ModRe
   const resolved = await resolveModPath(scope, fileName, { mustExist: true });
 
   return {
-    fabricMetadata: await readFabricMetadata(resolved.path),
+    metadata: await readJarMetadata(resolved.path),
     fileName,
     modifiedAt: resolved.stat!.mtime.toISOString(),
     quarantineMetadata: scope === "quarantine" ? await readQuarantineMetadata(fileName) : undefined,

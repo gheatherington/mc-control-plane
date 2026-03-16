@@ -2,7 +2,7 @@
 
 ## Active Summary
 
-- The live Fabric server runs on host port `6767` and is healthy.
+- The live Forge server runs on host port `6767` and is healthy.
 - The panel and Caddy stack are live on host port `8080`.
 - Minecraft's management server is enabled internally on `25585/tcp`.
 - The panel is now being simplified to a single-admin LAN control page with no auth layer.
@@ -58,7 +58,7 @@ Validation:
 - `docker compose up -d --build panel`
 - `curl -X POST http://127.0.0.1:8080/api/server/save`
 - `curl -H 'Content-Type: application/json' -d '{"message":"Panel broadcast verify 2118"}' http://127.0.0.1:8080/api/server/broadcast`
-- `docker compose logs --tail=20 fabric`
+- `docker compose logs --tail=20 forge`
 
 ### Phase 10 Complete
 
@@ -150,8 +150,8 @@ Validation performed:
 - `docker compose config`
 - `docker compose up -d --build panel`
 - `curl http://127.0.0.1:8080/api/settings`
-- `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"motd":"A Fabric-ready Minecraft server [panel test]"}}'`
-- `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"motd":"A Fabric-ready Minecraft server"}}'`
+- `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"motd":"A Forge-ready Minecraft server [panel test]"}}'`
+- `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"motd":"A Forge-ready Minecraft server"}}'`
 - `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"pvp":"false"}}'`
 - `curl -X POST http://127.0.0.1:8080/api/settings -H 'Content-Type: application/json' -d '{"values":{"pvp":"true"}}'`
 
@@ -257,7 +257,7 @@ Implementation steps:
 
 - Add a backend mod service that scopes all filesystem actions to `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine` with path normalization and traversal protection.
 - Build mod inventory endpoints first so the panel can distinguish active mods, staged uploads, and quarantined files before any write flows are added.
-- Extract practical jar metadata for listing views, such as file size, modified time, and Fabric metadata from `fabric.mod.json` when present.
+- Extract practical jar metadata for listing views, such as file size, modified time, and loader metadata from `fabric.mod.json` or `META-INF/mods.toml` when present.
 - Add upload flows into staging before active install so new jars can be reviewed, promoted, or deleted without immediately affecting the live server.
 - Add promote/install and remove actions with explicit restart-required messaging and a clear distinction between files that are live on disk versus loaded in the running server.
 - Add quarantine and rollback handling so bad uploads or rejected installs can be moved out of active paths instead of being hard-deleted first.
@@ -268,7 +268,7 @@ Completed:
 
 - Added a backend mod service that scopes all file actions to `data/mods`, `data/mods-staging`, and `panel-data/mod-quarantine`, including directory bootstrap, safe file-name validation, and traversal-resistant path resolution.
 - Added `/api/mods` inventory plus write endpoints for upload-to-staging, install/promote, quarantine/remove, restore/rollback, and scoped delete flows.
-- Added jar metadata extraction for inventory views, including file size, modified time, and `fabric.mod.json` fields when present.
+- Added jar metadata extraction for inventory views, including file size, modified time, and recognized Fabric or Forge descriptor fields when present.
 - Added quarantine metadata so removed or rejected jars retain previous-scope and reason context for rollback workflows.
 - Added a cross-filesystem move fallback so mod actions work correctly between the mounted data and panel-data roots.
 - Replaced the placeholder `Mods` route with a live panel page that supports staged uploads, active-versus-staged inventory, quarantine visibility, rollback actions, and restart-required guidance.

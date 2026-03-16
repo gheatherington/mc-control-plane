@@ -1,13 +1,13 @@
-# Fabric Minecraft Server
+# Forge Minecraft Server
 
-This stack runs a Fabric-ready Minecraft server in Docker using `itzg/minecraft-server`, pinned to Minecraft `1.21.11`.
+This stack runs a Forge-ready Minecraft server in Docker using `itzg/minecraft-server`, pinned to Minecraft `1.21.11`.
 
 ## Todo
 
 1. Install Docker Engine and the Compose plugin.
 2. Copy this stack to `/opt/fabric-minecraft-server`.
 3. Review `.env` and adjust values if needed.
-4. Start the server and let Fabric generate the initial `/data` layout.
+4. Start the server and let Forge generate the initial `/data` layout.
 5. Add mods later under `/opt/fabric-minecraft-server/data/mods`.
 
 ## Files
@@ -84,12 +84,12 @@ Open the server console:
 
 ```bash
 cd /opt/fabric-minecraft-server
-docker attach fabric-minecraft-server
+docker attach forge-minecraft-server
 ```
 
 Detach from the console with `Ctrl+P`, then `Ctrl+Q`.
 
-Build the Fabric mod scaffold:
+Build the legacy Fabric mod scaffold:
 
 ```bash
 cd /opt/fabric-minecraft-server/panel-mod
@@ -101,7 +101,7 @@ cd /opt/fabric-minecraft-server/panel-mod
 - World, configs, logs, and mods live under `/opt/fabric-minecraft-server/data`.
 - Active mods live under `/opt/fabric-minecraft-server/data/mods`.
 - Staged mod uploads live under `/opt/fabric-minecraft-server/data/mods-staging`.
-- The Fabric mod workspace for panel integration lives under `/opt/fabric-minecraft-server/panel-mod`.
+- The legacy Fabric mod workspace for older panel-bridge experiments lives under `/opt/fabric-minecraft-server/panel-mod`.
 - Panel runtime data lives under `/opt/fabric-minecraft-server/panel-data`.
 - Quarantined mods live under `/opt/fabric-minecraft-server/panel-data/mod-quarantine`.
 - Backup archives live under `/opt/fabric-minecraft-server/backups`.

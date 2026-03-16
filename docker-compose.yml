@@ -1,17 +1,20 @@
 services:
-  fabric:
+  forge:
     image: itzg/minecraft-server:java21
-    container_name: fabric-minecraft-server
+    container_name: forge-minecraft-server
     restart: unless-stopped
     tty: true
     stdin_open: true
     ports:
       - "${MC_PORT:-6767}:25565"
+    dns:
+      - "1.1.1.1"
+      - "8.8.8.8"
     expose:
       - "${MC_MANAGEMENT_PORT:-25585}"
     environment:
       EULA: "TRUE"
-      TYPE: "FABRIC"
+      TYPE: "FORGE"
       VERSION: "${MC_VERSION}"
       TZ: "${TZ}"
       UID: "${UID}"
@@ -40,23 +43,23 @@ services:
   panel:
     build:
       context: ./panel
-    container_name: fabric-minecraft-panel
+    container_name: forge-minecraft-panel
     restart: unless-stopped
     user: "1000:1000"
     group_add:
       - "990"
     depends_on:
-      - fabric
+      - forge
     environment:
       NODE_ENV: production
       PORT: "${PANEL_PORT:-3000}"
       MC_DATA_ROOT: /srv/minecraft/data
       MC_BACKUPS_ROOT: /srv/minecraft/backups
       PANEL_DATA_ROOT: /srv/minecraft/panel-data
-      MC_MANAGEMENT_HOST: fabric
+      MC_MANAGEMENT_HOST: forge
       MC_MANAGEMENT_PORT: "${MC_MANAGEMENT_PORT:-25585}"
       MC_MANAGEMENT_TLS: "false"
-      MC_CONTAINER_NAME: fabric-minecraft-server
+      MC_CONTAINER_NAME: forge-minecraft-server
     volumes:
       - ./data:/srv/minecraft/data
       - ./backups:/srv/minecraft/backups
@@ -65,7 +68,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
   caddy:
     image: caddy:2-alpine
-    container_name: fabric-minecraft-panel-caddy
+    container_name: forge-minecraft-panel-caddy
     restart: unless-stopped
     depends_on:
       - panel

@@ -119,10 +119,12 @@ type BackupsResponse = {
 };
 
 type ModMetadata = {
+  descriptor: "fabric.mod.json" | "META-INF/mods.toml";
   description?: string;
-  environment?: string;
   id: string;
+  loader: "fabric" | "forge";
   name?: string;
+  side?: string;
   version?: string;
 };
 
@@ -133,7 +135,7 @@ type QuarantineMetadata = {
 };
 
 type ModRecord = {
-  fabricMetadata: ModMetadata | null;
+  metadata: ModMetadata | null;
   fileName: string;
   modifiedAt: string;
   quarantineMetadata?: QuarantineMetadata;
@@ -182,6 +184,11 @@ const quarantineReasonLabel: Record<NonNullable<QuarantineMetadata["reason"]>, s
   "delete-active": "Removed from active mods",
   "manual-quarantine": "Moved out of staging",
   "rejected-upload": "Rejected after upload"
+};
+
+const modLoaderLabel: Record<ModMetadata["loader"], string> = {
+  fabric: "Fabric",
+  forge: "Forge"
 };
 
 const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
@@ -1073,16 +1080,17 @@ const ModList = ({
         <div className="mod-row" key={`${mod.scope}-${mod.fileName}`}>
           <div>
             <div className="mod-heading">
-              <strong>{mod.fabricMetadata?.name || mod.fileName}</strong>
-              <span className={`tag ${mod.fabricMetadata ? "live-tag" : "restart-tag"}`}>
-                {mod.fabricMetadata ? "Fabric Metadata" : "No fabric.mod.json"}
+              <strong>{mod.metadata?.name || mod.fileName}</strong>
+              <span className={`tag ${mod.metadata ? "live-tag" : "restart-tag"}`}>
+                {mod.metadata ? `${modLoaderLabel[mod.metadata.loader]} Metadata` : "No recognized mod descriptor"}
               </span>
             </div>
             <p className="body-copy mod-file-name">{mod.fileName}</p>
             <div className="player-tags">
-              {mod.fabricMetadata?.id ? <span className="tag">{mod.fabricMetadata.id}</span> : null}
-              {mod.fabricMetadata?.version ? <span className="tag">{mod.fabricMetadata.version}</span> : null}
-              {mod.fabricMetadata?.environment ? <span className="tag">{mod.fabricMetadata.environment}</span> : null}
+              {mod.metadata?.id ? <span className="tag">{mod.metadata.id}</span> : null}
+              {mod.metadata?.version ? <span className="tag">{mod.metadata.version}</span> : null}
+              {mod.metadata?.side ? <span className="tag">{mod.metadata.side}</span> : null}
+              {mod.metadata?.descriptor ? <span className="tag">{mod.metadata.descriptor}</span> : null}
             </div>
             {mod.quarantineMetadata ? (
               <p className="body-copy">
@@ -1091,7 +1099,7 @@ const ModList = ({
                 {quarantineReasonLabel[mod.quarantineMetadata.reason]}.
               </p>
             ) : null}
-            {mod.fabricMetadata?.description ? <p className="body-copy">{mod.fabricMetadata.description}</p> : null}
+            {mod.metadata?.description ? <p className="body-copy">{mod.metadata.description}</p> : null}
           </div>
           <div className="mod-meta">
             <span><strong>Modified</strong> {new Date(mod.modifiedAt).toLocaleString()}</span>
@@ -1262,7 +1270,7 @@ const ModsPage = () => {
     <section className="dashboard-grid settings-page">
       <article className="panel-card logs-card settings-summary-card">
         <p className="eyebrow">Mod Inventory</p>
-        <h1>Scoped Fabric Jars</h1>
+        <h1>Scoped Mod Jars</h1>
         <p className="body-copy">Uploads land in staging first. From there you can install a jar into the active mod set, quarantine it, or delete it. Removing an active mod also moves it into quarantine so rollback stays available.</p>
         <div className="metric-grid">
           <div><span className="metric-label">Active</span><strong>{modsState.mods.active.length}</strong></div>
@@ -1320,9 +1328,9 @@ export const App = () => (
   <div className="shell">
     <aside className="sidebar">
       <div>
-        <p className="eyebrow">Fabric Panel</p>
+        <p className="eyebrow">Forge Panel</p>
         <h1>Single-Admin Control Plane</h1>
-        <p className="body-copy">This panel is private to the LAN and exposes direct controls for the live Fabric 1.21.11 server.</p>
+        <p className="body-copy">This panel is private to the LAN and exposes direct controls for the live Forge 1.21.11 server.</p>
       </div>
       <nav className="nav">
         {pages.map((page) => (
