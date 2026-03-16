@@ -24,8 +24,8 @@ This server was built with the following fixed decisions:
 - Memory target: `12G` max heap, `2G` initial heap.
 - Host game port: `6767/tcp`, forwarded to container `25565/tcp`.
 - Admin panel port: `8080/tcp` through Caddy.
-- Internal Minecraft management API: `25585/tcp` on the Compose network only.
-- Control plane integration path: Minecraft's built-in JSON-RPC management API on `25585`; `panel-mod/` is not used by the live stack.
+- Internal Minecraft management API: `25585/tcp` on the Compose network only, but the current BMC5 runtime does not bind it in this environment.
+- Control plane integration path: the panel prefers Minecraft's built-in JSON-RPC management API on `25585` when available and otherwise falls back to Docker, file, and RCON-backed operations; `panel-mod/` is not used by the live stack.
 - Current validation baseline: `docker compose config`, panel `npm run check`, panel `npm run build`, and `docker compose up -d --build --remove-orphans` all passed for the `1.21.1` migration.
 - Owner: `brayden:brayden` for the stack directory and data directory.
 - Container UID/GID mapping: `1000:1000`.
@@ -85,6 +85,8 @@ Do not expose secrets or back up `data/` carelessly. Keep the Minecraft version 
 - The host-local Java 21 and Gradle toolchain remains installed under `/home/brayden/.local/opt`, but `panel-mod/` is now historical reference material only and is not used by the live server or panel.
 - NeoForge migration is complete: the runtime now uses `TYPE=NEOFORGE`, `NEOFORGE_VERSION=21.1.220`, and the live service names are `neoforge-minecraft-server`, `neoforge-minecraft-panel`, and `neoforge-minecraft-panel-caddy`.
 - Minecraft `1.21.1` migration is complete: the live server, Compose defaults, dashboard version reporting, and panel branding text now match the active `1.21.1` runtime, and the recreated stack reached healthy state after the change.
+- Better MC [NEOFORGE] BMC5 installation is complete: the live runtime now uses the upstream BMC5 v48.5 server pack content under `data/mods` and `data/config`, keeps a fresh BMC5 world, preserves the panel/Caddy/control-plane architecture, stays on `NEOFORGE_VERSION=21.1.220`, and relies on the panel's Docker/file/RCON fallback paths because the BMC5 runtime does not bind the built-in management RPC port on `25585` in this environment.
+- Phase 17 fallback hardening is complete: when the management API is unavailable, the panel now serves dashboard and settings from file/container state, keeps player and server actions working through scoped RCON where possible, and avoids crashing the panel process on management connection failures.
 - The old bridge-mod approach is superseded: the live panel uses the internal management API for dashboard state, player management, saves, broadcasts, settings, and realtime refreshes, with RCON kept only for raw console commands.
 - Phase 16 is complete: the panel now exposes scoped file-management APIs and a live Files page for approved data roots, traversal-resistant navigation, download/upload flows, guarded rename/delete actions, safe inline editing for small text configs, and explicit file audit events.
 - Phase 16 refinements are complete: the Files route now supports both common-root shortcuts and a full mounted server-tree view, uses a horizontal listing/editor workspace in both modes, exposes current-path plus back/forward/up navigation, supports folder search, shows file-type badges, and includes layout fixes for long file names and detail-panel spacing.

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { config } from "./config";
-import { getContainerState, getRecentLogs } from "./control";
+import { getContainerState, getRecentLogs, runRconCommand } from "./control";
 import { callManagement } from "./management";
 
 type NamedEntry = {
@@ -262,59 +262,99 @@ export const listPlayers = async () => {
 };
 
 export const whitelistPlayer = async (name: string) => {
-  await callManagement("minecraft:allowlist/add", [[{ name }]]);
+  try {
+    await callManagement("minecraft:allowlist/add", [[{ name }]]);
+  } catch {
+    await runRconCommand("whitelist", "add", name);
+  }
   return listPlayers();
 };
 
 export const unwhitelistPlayer = async (name: string) => {
-  await callManagement("minecraft:allowlist/remove", [[{ name }]]);
+  try {
+    await callManagement("minecraft:allowlist/remove", [[{ name }]]);
+  } catch {
+    await runRconCommand("whitelist", "remove", name);
+  }
   return listPlayers();
 };
 
 export const opPlayer = async (name: string) => {
-  await callManagement("minecraft:operators/add", [[{
-    bypassesPlayerLimit: false,
-    permissionLevel: 4,
-    player: { name }
-  }]]);
+  try {
+    await callManagement("minecraft:operators/add", [[{
+      bypassesPlayerLimit: false,
+      permissionLevel: 4,
+      player: { name }
+    }]]);
+  } catch {
+    await runRconCommand("op", name);
+  }
   return listPlayers();
 };
 
 export const deopPlayer = async (name: string) => {
-  await callManagement("minecraft:operators/remove", [[{ name }]]);
+  try {
+    await callManagement("minecraft:operators/remove", [[{ name }]]);
+  } catch {
+    await runRconCommand("deop", name);
+  }
   return listPlayers();
 };
 
 export const banPlayer = async (name: string) => {
-  await callManagement("minecraft:bans/add", [[{
-    player: { name }
-  }]]);
+  try {
+    await callManagement("minecraft:bans/add", [[{
+      player: { name }
+    }]]);
+  } catch {
+    await runRconCommand("ban", name);
+  }
   return listPlayers();
 };
 
 export const pardonPlayer = async (name: string) => {
-  await callManagement("minecraft:bans/remove", [[{ name }]]);
+  try {
+    await callManagement("minecraft:bans/remove", [[{ name }]]);
+  } catch {
+    await runRconCommand("pardon", name);
+  }
   return listPlayers();
 };
 
 export const kickPlayer = async (name: string, reason?: string) => {
-  await callManagement("minecraft:players/kick", [[{
-    message: reason && reason.trim() ? { literal: reason.trim() } : undefined,
-    player: { name }
-  }]]);
+  const trimmedReason = reason?.trim();
+
+  try {
+    await callManagement("minecraft:players/kick", [[{
+      message: trimmedReason ? { literal: trimmedReason } : undefined,
+      player: { name }
+    }]]);
+  } catch {
+    await runRconCommand(...["kick", name, ...(trimmedReason ? [trimmedReason] : [])]);
+  }
   return listPlayers();
 };
 
 export const saveWorld = async () => {
-  await callManagement("minecraft:server/save", [false]);
-  return "Save requested through the management API";
+  try {
+    await callManagement("minecraft:server/save", [false]);
+    return "Save requested through the management API";
+  } catch {
+    await runRconCommand("save-all", "flush");
+    return "Save requested through RCON fallback";
+  }
 };
 
 export const broadcastMessage = async (message: string) => {
-  await callManagement("minecraft:server/system_message", [{
-    message: { literal: message },
-    overlay: false
-  }]);
+  try {
+    await callManagement("minecraft:server/system_message", [{
+      message: { literal: message },
+      overlay: false
+    }]);
 
-  return "Broadcast sent through the management API";
+    return "Broadcast sent through the management API";
+  } catch {
+    await runRconCommand("say", message);
+    return "Broadcast sent through RCON fallback";
+  }
 };

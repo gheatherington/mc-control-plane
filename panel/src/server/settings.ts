@@ -333,19 +333,29 @@ const readRuntimeValues = async () => {
 
   if (!state.Running) {
     return {
+      liveAvailable: false,
       running: false,
       values: {} as Record<string, SettingValue>
     };
   }
 
-  const runtimeEntries = await Promise.all(settings
-    .filter((setting) => setting.managementGetMethod)
-    .map(async (setting) => [setting.key, await callManagement<SettingValue>(setting.managementGetMethod as string)] as const));
+  try {
+    const runtimeEntries = await Promise.all(settings
+      .filter((setting) => setting.managementGetMethod)
+      .map(async (setting) => [setting.key, await callManagement<SettingValue>(setting.managementGetMethod as string)] as const));
 
-  return {
-    running: true,
-    values: Object.fromEntries(runtimeEntries)
-  };
+    return {
+      liveAvailable: true,
+      running: true,
+      values: Object.fromEntries(runtimeEntries)
+    };
+  } catch {
+    return {
+      liveAvailable: false,
+      running: true,
+      values: {} as Record<string, SettingValue>
+    };
+  }
 };
 
 const buildSettingsPayload = async () => {
@@ -390,6 +400,7 @@ const buildSettingsPayload = async () => {
 
   return {
     groups,
+    liveSettingsAvailable: runtime.liveAvailable,
     pendingRestart: {
       keys: pendingRestartKeys,
       required: pendingRestartKeys.length > 0,
@@ -430,9 +441,9 @@ export const updateSettings = async (updates: Record<string, unknown>) => {
     propertyUpdates[definition.propertyKey] = serialized;
     appliedKeys.push(definition.key);
 
-    if (definition.managementSetMethod && runtime.running && runtimeChanged) {
+    if (definition.managementSetMethod && runtime.running && runtime.liveAvailable && runtimeChanged) {
       runtimeUpdates.push(callManagement(definition.managementSetMethod, [normalized]));
-    } else if (definition.restartRequired && fileChanged) {
+    } else if (fileChanged && (definition.restartRequired || !runtime.liveAvailable)) {
       restartRequiredKeys.push(definition.key);
     }
   }

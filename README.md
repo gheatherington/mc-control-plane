@@ -1,6 +1,6 @@
 # NeoForge Minecraft Server
 
-This stack runs a NeoForge Minecraft server in Docker using `itzg/minecraft-server:java21`, pinned to Minecraft `1.21.1` with NeoForge `21.1.220`.
+This stack runs a NeoForge Minecraft server in Docker using `itzg/minecraft-server:java21`, pinned to Minecraft `1.21.1` with NeoForge `21.1.220` and staged around the Better MC [NEOFORGE] BMC5 server pack.
 
 ## Runtime
 
@@ -11,7 +11,9 @@ This stack runs a NeoForge Minecraft server in Docker using `itzg/minecraft-serv
 - Runtime services: `neoforge`, `panel`, and `caddy`
 - Memory defaults: `12G` max heap and `2G` initial heap
 
-Shared gameplay modpacks must match between client and server. The panel branding is generic `Modded MC`, but the runtime is NeoForge-first and the Mods page is specifically for Forge/NeoForge server jars.
+Shared gameplay modpacks must match between client and server. The live runtime is the Better MC [NEOFORGE] BMC5 server pack on NeoForge, while the panel remains a generic LAN-only admin surface and the Mods page stays focused on Forge/NeoForge server jars.
+
+The panel still prefers Minecraft's built-in management API when it is available, but the current BMC5 runtime does not bind `25585` in this environment. Dashboard, settings, player actions, saves, and broadcasts therefore fall back to the existing Docker, file, and RCON control paths.
 
 ## Files
 
